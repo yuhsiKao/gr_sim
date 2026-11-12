@@ -1,0 +1,7 @@
+# The Python 3.10 environment for mavgui and examples/: installed by
+# install.md, "Without Docker" (conda env) and by docker/Dockerfile (uv venv).
+numpy==2.2.6
+scipy==1.15.3
+matplotlib==3.10.9
+pygame-ce==2.5.8
+pygame_gui==0.6.14

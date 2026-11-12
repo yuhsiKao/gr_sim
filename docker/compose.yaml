@@ -1,0 +1,40 @@
+# Development container for ghost_sim (osrf/ros:jazzy-desktop + gz-harmonic + mavgui's Python 3.10).
+# Usage: docker/README.md. Per-machine settings: docker/.env (see .env.example).
+name: gr-sim
+services:
+  gr-sim:
+    build:
+      context: .
+    image: gr-sim:dev
+    container_name: gr-sim
+    network_mode: host   # MBLink (UDP) and DDS domain 124 also reach tools running on the host
+    environment:
+      DISPLAY: ${DISPLAY}
+      QT_X11_NO_MITSHM: "1"
+      NVIDIA_DRIVER_CAPABILITIES: all   # graphics: the windows and the EGL depth camera
+      CONTROLS_INSTALL_DIR: /ws/GhostSDK_bullet_linux
+    gpus: all
+    # gamepads: Docker's device cgroup refuses to open device nodes that are only bind-mounted
+    # (EPERM), so allow input devices (major 13)
+    device_cgroup_rules:
+      - "c 13:* rmw"
+    working_dir: /root/gr_sim
+    tty: true
+    stdin_open: true
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev/input:/dev/input
+      # the container runs as root; its home is the host folder that holds this repository (~/docker_ws/gr_sim):
+      # the project (gr_sim/), the ROS 2 interface workspace (gr_ros2_ws/), shell history and logs
+      # survive the container
+      - ../..:/root
+      # the container's build tree, kept apart from a host build/ (which links against the host's libraries)
+      - ../build-docker:/root/gr_sim/build
+      # the Ghost SDK is read-only by project rule; the mount enforces it
+      # (a wrong path is an error instead of a new empty folder)
+      - type: bind
+        source: ${CONTROLS_INSTALL_DIR:?set CONTROLS_INSTALL_DIR in docker/.env (install.md, step 3)}
+        target: /ws/GhostSDK_bullet_linux
+        read_only: true
+        bind:
+          create_host_path: false

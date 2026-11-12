@@ -1,0 +1,129 @@
+# RViz2 view of the SDK's perception output, set up like the screenshots in Ghost's perception docs.
+# Opened by scripts/rviz.sh. The SDK labels every message "body" and publishes no TF, so the Fixed Frame
+# has to be "body". The coordinates are its E frame (origin at the body, z up), except that the 1D
+# heightmap also turns with the body's held pitch.
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Help Height: 0
+    Property Tree Widget:
+      Expanded:
+        - /Heightmap1
+      Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Value: true
+      Reference Frame: <Fixed Frame>
+      Cell Size: 0.5
+      Plane Cell Count: 12
+      Offset:
+        X: 1
+        Y: 0
+        Z: -0.5   # about the floor while standing (the grid moves with the body)
+      Color: 160; 160; 164
+      Alpha: 0.5
+    # the frame origin (the body origin), always drawn level: no TF carries the body's attitude
+    - Class: rviz_default_plugins/Axes
+      Name: Origin
+      Enabled: true
+      Value: true
+      Reference Frame: body
+      Length: 0.3
+      Radius: 0.02
+    # hmap1D: the heightmap in the sagittal plane, used for footholds in stair mode
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Heightmap
+      Enabled: true
+      Value: true
+      Topic:
+        Value: /mcu/state/heightmap
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+      Selectable: true
+      Style: Flat Squares
+      Size (m): 0.01
+      Alpha: 1
+      Decay Time: 0
+      Position Transformer: XYZ
+      Color Transformer: AxisColor
+      Axis: Z
+      Autocompute Value Bounds: true
+      Use Fixed Frame: true
+    # Obstacle map: published in obstacle-avoidance modes (vision_mode 2) when there are obstacles
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Obstacles
+      Enabled: true
+      Value: true
+      Topic:
+        Value: /mcu/state/obstmap
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+      Selectable: true
+      Style: Spheres
+      Size (m): 0.1
+      Alpha: 1
+      Decay Time: 0
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 255; 255; 255
+      Use Fixed Frame: true
+    # hmap2D (with the default HM2D_LOGGING_DBG = 1): in vision_mode 2, at an irregular rate; off by default
+    - Class: rviz_default_plugins/PointCloud2
+      Name: hmap2D
+      Enabled: false
+      Value: false
+      Topic:
+        Value: /mcu/state/pointcloud
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+      Selectable: true
+      Style: Flat Squares
+      Size (m): 0.01
+      Alpha: 1
+      Decay Time: 0
+      Position Transformer: XYZ
+      Color Transformer: AxisColor
+      Axis: Z
+      Autocompute Value Bounds: true
+      Use Fixed Frame: true
+  Enabled: true
+  Global Options:
+    Fixed Frame: body
+    Background Color: 48; 48; 48
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Target Frame: <Fixed Frame>
+      # from the robot's right side, slightly above: forward (+x) points right, as in Ghost's screenshots
+      Focal Point:
+        X: 0.8
+        Y: 0
+        Z: -0.3
+      Distance: 3
+      Pitch: 0.2
+      Yaw: -1.5708
+      Near Clip Distance: 0.01
+Window Geometry:
+  Width: 1200
+  Height: 700
+  Displays:
+    collapsed: false

@@ -1,0 +1,48 @@
+<!--
+  scene_flat.xml plus Ghost's staircase from its Bullet world (SimWrapper::setup(): stairs.urdf at
+  (5, 0, 0) and the landing box at (6, 0, 0)), at the same place. stairs.urdf is a concave mesh, which
+  MuJoCo would collide as its convex hull (a ramp), so the 6 steps are boxes measured from
+  stairs.obj: about 0.22 m rise and 0.30 m run, 2 m wide, the first edge at x = 2.851 m; the landing
+  top is 1.305 m. Select with: scripts/run_sim.sh gsim_scene simulators/gsim_mujoco/models/scene_stairs.xml
+  Keep angle="radian" and the 0.5 ms timestep (see scene_flat.xml).
+-->
+<mujoco model="ghost_sim_stairs">
+  <compiler angle="radian"/>
+  <!-- cone="elliptic": with the default pyramidal cone the URDF's toe friction of 3.0 made
+       the toe contacts give way, and the robot stood on its shin cylinders.
+       impratio="10": with the default 1 the stance feet creep, and the controller takes a
+       correcting step every few seconds while standing in walk mode (Bullet does not). -->
+  <option timestep="0.0005" integrator="implicitfast" cone="elliptic" impratio="10" gravity="0 0 -9.81"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture name="skybox" type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" mark="edge" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="5 5" texuniform="true" reflectance="0.2"/>
+    <material name="stairs" rgba="0.75 0.62 0.45 1"/>
+  </asset>
+
+  <default>
+    <default class="stairs">
+      <geom type="box" material="stairs"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="grid"
+          friction="1 0.005 0.0001" contype="1" conaffinity="1"/>
+    <!-- Ghost's staircase: each step is a solid box from its front edge to x = 4.637 -->
+    <geom name="step1" class="stairs" pos="3.7440 0 0.1020" size="0.8930 1.003 0.1020"/>
+    <geom name="step2" class="stairs" pos="3.8930 0 0.2125" size="0.7440 1.003 0.2125"/>
+    <geom name="step3" class="stairs" pos="4.0415 0 0.3225" size="0.5955 1.003 0.3225"/>
+    <geom name="step4" class="stairs" pos="4.1905 0 0.4330" size="0.4465 1.003 0.4330"/>
+    <geom name="step5" class="stairs" pos="4.3395 0 0.5435" size="0.2975 1.003 0.5435"/>
+    <geom name="step6" class="stairs" pos="4.4880 0 0.6535" size="0.1490 1.003 0.6535"/>
+    <geom name="landing" class="stairs" pos="6 0 0" size="1.5 1 1.305"/>
+  </worldbody>
+</mujoco>

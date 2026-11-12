@@ -1,0 +1,23 @@
+build*/
+m0_run/
+.sdk_manifest
+docs/
+run/
+docker/.env
+simulators/gsim_gazebo/models/8f_world/
+simulators/gsim_gazebo/models/8f_world_collision/
+simulators/gsim_gazebo/models/stair_meshes/
+simulators/gsim_gazebo/models/textures/
+tests/
+# textured pyramid world, its stair mesh generator (kept on disk) and backups, Python caches
+simulators/gsim_gazebo/models/world_pyramid.sdf
+simulators/gsim_gazebo/models/gen_stair_meshes.py
+simulators/gsim_gazebo/models/pbr_common.py
+simulators/gsim_gazebo/models/*.bak
+__pycache__/
+# development tools for comparing the simulators against each other (kept on disk for tests/)
+scripts/compare_logs.py
+examples/arm_check.py
+examples/perception_check.py
+# Bullet-only door script (kept on disk)
+examples/door_approach.py
