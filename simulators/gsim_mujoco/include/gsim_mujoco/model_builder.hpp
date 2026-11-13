@@ -26,6 +26,9 @@ inline constexpr double kTrackerGain = 10.0;
 // Ghost's synthetic depth camera (gsim_core/depth_camera.hpp), a camera on the robot's body.
 inline constexpr const char* kDepthCameraName = "depth_underside";
 
+// Contact dimension of the toes: 4 = sliding + torsional friction (ModelOptions::toe_friction[1]).
+inline constexpr int kToeCondim = 4;
+
 struct ModelOptions {
   std::string urdf_path;                         // absolute
   std::string scene_path;                        // absolute

@@ -70,6 +70,9 @@ void configureGeoms(mjsBody* base, const ModelOptions& opt) {
     g->contype = 1;
     g->conaffinity = 0;
     if (startsWith(elementName(mjs_getParent(e)->element), "toe")) {
+      // condim 4 turns the torsional coefficient on: Ghost's Bullet toes have spinning_friction,
+      // and the legs have no vertical-axis joint, so a toe that cannot spin holds the body's yaw.
+      g->condim = kToeCondim;
       for (int i = 0; i < 3; ++i) g->friction[i] = opt.toe_friction[i];
       for (int i = 0; i < 2; ++i) g->solref[i] = opt.toe_solref[i];
     }
@@ -373,6 +376,8 @@ std::vector<std::string> checkMujocoModel(const mjModel* m, const JointMap& j, c
     for (int i = 0; i < 3; ++i)
       if (std::fabs(m->geom_friction[3 * g + i] - opt.toe_friction[i]) > 1e-9)
         add("friction: toe geom on " + body + " friction differs from the requested value");
+    if (m->geom_condim[g] != kToeCondim)
+      add("condim: toe geom on " + body + " has no torsional friction (condim " + std::to_string(m->geom_condim[g]) + ")");
   }
   if (toes != 4) add("toe: found " + std::to_string(toes) + " toe collision geoms, expected 4");
   for (size_t a = 0; a < robot_geoms.size(); ++a)

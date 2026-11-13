@@ -185,7 +185,7 @@ std::vector<std::string> checkGazeboModel(const std::string& model_sdf, double t
     if (missing(std::to_string(j))) problems.push_back("joint \"" + std::to_string(j) + "\" is missing from the converted model");
   int toes = 0, friction = 0;
   for (int i = 0; i < 4; ++i)
-    toes += model_sdf.find("fixed_joint_lump__toe" + std::to_string(i) + "_collision_1") != std::string::npos;
+    toes += model_sdf.find(kToeCollisionTag + std::to_string(i) + "_collision_1") != std::string::npos;
   if (toes != 4) problems.push_back("expected 4 toe collisions, found " + std::to_string(toes));
   const std::regex mu("<mu>([0-9.eE+-]+)</mu>");
   for (auto it = std::sregex_iterator(model_sdf.begin(), model_sdf.end(), mu); it != std::sregex_iterator(); ++it)

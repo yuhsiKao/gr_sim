@@ -1,18 +1,6 @@
-<!--
-  Simulation environment for gr_sim's MuJoCo backend.
-  This is the place to edit the world (ground, obstacles, lights, physics options);
-  it plays the role of SimWrapper::setup() in Ghost's Bullet wrapper.
-  The robot is NOT defined here: it is built at run time from the SDK's URDF and
-  attached to this world. Keep angle="radian" (the URDF joint ranges are radians)
-  and keep the 0.5 ms timestep a divisor of the 2 ms SDK control period.
--->
 <mujoco model="ghost_sim_flat">
   <compiler angle="radian"/>
-  <!-- cone="elliptic": with the default pyramidal cone the URDF's toe friction of 3.0 made
-       the toe contacts give way, and the robot stood on its shin cylinders.
-       impratio="10": with the default 1 the stance feet creep, and the controller takes a
-       correcting step every few seconds while standing in walk mode (Bullet does not). -->
-  <option timestep="0.0005" integrator="implicitfast" cone="elliptic" impratio="10" gravity="0 0 -9.81"/>
+  <option timestep="0.0005" integrator="implicitfast" cone="elliptic" impratio="10" noslip_iterations="5" gravity="0 0 -9.81"/>
 
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>

@@ -38,6 +38,10 @@ Without `gsim_headless 1`, `ghost_sim` starts `gz sim -g`, which attaches to the
 ## Behaviour
 
 - **Robot**: Ghost's URDF is converted to SDF in memory (DART physics, ODE collisions).
+- **Toes**: DART's contacts have no torsional friction, so `ghost_sim` adds it: each toe gets a
+  torque about its contact normal that holds it up to `torsional` × normal force
+  (`gsim_toe_friction`, 0.04 by default), like the spinning friction and friction anchor of
+  Ghost's Bullet toes. Without it the body yaws over planted feet once the arm is unstowed.
 - **Arm**: lock and wrist servo as DART servo joints, driven like Ghost's Bullet motor (same gains
   and force limits); the SDK's torques go straight to the joints once unstowed. The gripper jaws
   collide with the part's `.stl` (the URDF's `.obj` has no normals, which DART cannot load). A jaw
@@ -53,7 +57,7 @@ Without `gsim_headless 1`, `ghost_sim` starts `gz sim -g`, which attaches to the
 | --- | --- | --- | --- |
 | Standing height | 0.536 m | 0.529 m | — |
 | Walking, half speed command | 0.80 m/s | 0.79 m/s | — |
-| Turning | 48.9 °/s | 49.1 °/s | — |
+| Turning, half rate command | 41.1 °/s | 41.2 °/s | 40.6 °/s (`gsim_backend bullet`) |
 | Wrist step time constant | 0.254 s | 0.254 s | 0.2475 s |
 | Wrist holding current | -0.597 N m | -0.597 N m | -0.592 N m |
 

@@ -9,9 +9,11 @@
 #include <gz/sim/Link.hh>
 #include <gz/sim/Model.hh>
 #include <gz/sim/World.hh>
+#include <gz/sim/components/ContactSensorData.hh>
 #include <gz/sim/components/JointAxis.hh>
 #include <gz/sim/components/JointForceCmd.hh>
 #include <gz/sim/components/JointVelocityCmd.hh>
+#include <gz/sim/components/Name.hh>
 
 #include <Eigen/Geometry>
 
@@ -60,6 +62,20 @@ void GazeboSystem::Configure(const gz::sim::Entity& entity, const std::shared_pt
     joint.EnableVelocityCheck(ecm, true);
     buf_->q[j] = 0.f;
     buf_->dq[j] = 0.f;
+  }
+  if (buf_->toe_torsional > 0.0) {
+    // sdformat lumps each toe into its lower leg: "<link>_fixed_joint_lump__toe<i>_collision_1".
+    toes_.clear();
+    for (const gz::sim::Entity link : model.Links(ecm))
+      for (const gz::sim::Entity collision : gz::sim::Link(link).Collisions(ecm)) {
+        const auto* name = ecm.Component<gz::sim::components::Name>(collision);
+        if (!name || name->Data().find(kToeCollisionTag) == std::string::npos) continue;
+        gz::sim::Link(link).EnableVelocityChecks(ecm, true);
+        // The physics system fills the contacts of every collision that has this component.
+        ecm.CreateComponent(collision, gz::sim::components::ContactSensorData());
+        toes_.push_back({link, collision, ToeTorsion()});
+      }
+    if (toes_.size() != 4) return;   // not configured: checkGazeboModel has reported the toes
   }
   buf_->configured = true;
 
@@ -134,6 +150,28 @@ void GazeboSystem::driveServo(gz::sim::EntityComponentManager& ecm, gz::sim::Ent
   gz::sim::Joint(joint).SetVelocity(ecm, {v_cmd});
 }
 
+// Each toe gets ToeTorsion's torque about its contact normal, from the last step's contacts: the
+// normal force is the contact forces' component along the mean normal.
+void GazeboSystem::applyToeTorsion(gz::sim::EntityComponentManager& ecm, double dt) {
+  for (Toe& toe : toes_) {
+    gz::math::Vector3d normal, force;
+    if (const auto* data = ecm.Component<gz::sim::components::ContactSensorData>(toe.collision))
+      for (const auto& contact : data->Data().contact()) {
+        for (const auto& n : contact.normal()) normal += gz::math::Vector3d(n.x(), n.y(), n.z());
+        for (const auto& w : contact.wrench()) {
+          const auto& f = w.body_1_wrench().force();
+          force += gz::math::Vector3d(f.x(), f.y(), f.z());
+        }
+      }
+    const double length = normal.Length();
+    if (length > 1e-9) normal /= length;
+    const auto spin = gz::sim::Link(toe.link).WorldAngularVelocity(ecm);
+    const double torque = toe.friction.update(spin ? spin->Dot(normal) : 0.0, length > 1e-9 ? std::fabs(force.Dot(normal)) : 0.0,
+                                              buf_->toe_torsional, dt);
+    if (torque != 0.0) gz::sim::Link(toe.link).AddWorldWrench(ecm, gz::math::Vector3d::Zero, torque * normal);
+  }
+}
+
 void GazeboSystem::PreUpdate(const gz::sim::UpdateInfo& info, gz::sim::EntityComponentManager& ecm) {
   if (!buf_->configured) return;
   for (const auto& [j, q] : buf_->pending_resets) {
@@ -168,6 +206,7 @@ void GazeboSystem::PreUpdate(const gz::sim::UpdateInfo& info, gz::sim::EntityCom
     }
     buf_->applied_wrist = c;
   }
+  applyToeTorsion(ecm, dt);
   if (!buf_->ext_f_B.isZero()) {
     // Body-frame force at a body-frame point -> world force and torque about the body origin,
     // where AddWorldWrench applies it (the same conversion as the MuJoCo backend).

@@ -9,6 +9,7 @@ add_library(gsim_core STATIC
   src/csv_logger.cpp
   src/sim_backend.cpp
   src/bullet_motor.cpp
+  src/toe_torsion.cpp
   src/depth_camera.cpp
 )
 target_include_directories(gsim_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

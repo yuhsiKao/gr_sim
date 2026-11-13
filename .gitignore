@@ -19,5 +19,5 @@ __pycache__/
 scripts/compare_logs.py
 examples/arm_check.py
 examples/perception_check.py
-# Bullet-only door script (kept on disk)
+# Bullet-only door script
 examples/door_approach.py

@@ -49,6 +49,10 @@ std::string worldWithSensorsSystem(const std::string& world_sdf);
 // world_sdf with model_sdf inserted before its closing </world>.
 std::string worldWithModel(const std::string& world_sdf, const std::string& model_sdf);
 
+// sdformat lumps each toe into its lower leg; the toe's collision there is named
+// "<link>_fixed_joint_lump__toe<i>_collision_1".
+inline constexpr const char* kToeCollisionTag = "fixed_joint_lump__toe";
+
 // Problems with a converted model (empty = ok): the 12 revolute joints "0".."11", the 4 lumped toe
 // collisions and their friction toe_mu; with arm_joints also those joints, the 5 wrist joints and
 // the gripper jaw meshes (.stl, no .obj left); with depth_camera the camera on the body link.

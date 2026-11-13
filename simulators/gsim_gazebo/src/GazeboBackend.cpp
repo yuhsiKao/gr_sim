@@ -232,6 +232,7 @@ bool GazeboBackend::loadRobot(const RobotSpec& spec) {
   im.buffers.tau.assign(spec.num_sdk_joints, 0.0);
   im.buffers.arm_joints = spec.arm_joints;
   im.buffers.hide_body_from_sensors = opt.depth_camera;
+  im.buffers.toe_torsional = im.cfg.toe_friction[1];
   im.system = std::make_shared<GazeboSystem>(&im.buffers);
 
   gz::sim::ServerConfig config;

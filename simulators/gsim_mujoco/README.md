@@ -17,12 +17,14 @@ scripts/run_sim.sh gsim_scene simulators/gsim_mujoco/models/scene_stairs.xml
 
 | File | Contents |
 | --- | --- |
-| `models/scene_flat.xml` | Ground, lights, physics options (`cone="elliptic"`, `impratio="10"`, 0.5 ms timestep). Default. |
+| `models/scene_flat.xml` | Ground, lights, physics options (`cone="elliptic"`, `impratio="10"`, `noslip_iterations="5"`, 0.5 ms timestep). Default. |
 | `models/scene_stairs.xml` | `scene_flat.xml` plus Ghost's staircase (first step at x = 2.851 m). |
 
 `gsim_scene` takes any MJCF scene with a 0.5 ms timestep. Keep `cone="elliptic"` (with the default
 pyramidal cone the robot sinks onto its shins) and `impratio="10"` (with the default 1 the stance
-feet creep and the robot keeps taking correcting steps while standing in walk mode). There is no door: Ghost's door is in the Bullet
+feet creep and the robot keeps taking correcting steps while standing in walk mode) and
+`noslip_iterations="5"` (without it the toes' torsional friction is soft, and the body slowly yaws
+over planted feet once the arm is unstowed; Ghost's Bullet toes do not let it). There is no door: Ghost's door is in the Bullet
 world only.
 
 ## Window

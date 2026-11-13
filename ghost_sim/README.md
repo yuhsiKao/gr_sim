@@ -34,7 +34,7 @@ Exit codes: 0 normal, 1 selftest failed, 2 configuration or start-up error.
 | `gsim_urdf_dir` | `$CONTROLS_INSTALL_DIR/share/gr/urdf` | URDF folder. |
 | `gsim_log` | (off) | CSV log path. |
 | `gsim_selftest` | `0` | `1` = build the model, check it, exit (0 = pass). |
-| `gsim_toe_friction` | `"3.0 0.04 0"` | MuJoCo toe friction (slide, torsional, rolling). |
+| `gsim_toe_friction` | `"3.0 0.04 0"` | Toe friction (slide, torsional, rolling). Gazebo uses the first two. |
 | `gsim_toe_solref` | `"0.02 1"` | MuJoCo toe contact solref. |
 | `arm` | (off) | The SDK's own argument (as `launch.py -a`): `1` loads `vision60_arm.urdf`. |
 

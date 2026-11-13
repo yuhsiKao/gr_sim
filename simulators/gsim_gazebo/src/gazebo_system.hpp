@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "gsim_core/sim_backend.hpp"
+#include "gsim_core/toe_torsion.hpp"
 
 namespace gsim {
 
@@ -48,6 +49,9 @@ struct GazeboBuffers {
   Eigen::Array4d wrist_axis_torque = Eigen::Array4d::Constant(std::nan(""));   // transmitted torque about the axis (motor + damping)
   bool arm_configured = false;                          // every arm_joints id and all 5 wrist joints were found
 
+  // Torsional friction of the toes (gsim_core/toe_torsion.hpp): DART's contacts have none.
+  double toe_torsional = 0.0;                           // SimConfig::toe_friction[1]; 0 = off
+
   bool hide_body_from_sensors = false;                  // depth camera: the body's visuals are hidden in the server's sensor scene
 };
 
@@ -73,9 +77,16 @@ class GazeboSystem : public gz::sim::System,
   void driveForce(gz::sim::EntityComponentManager& ecm, gz::sim::Entity joint, double tau);
   void driveServo(gz::sim::EntityComponentManager& ecm, gz::sim::Entity joint, double q, double v_cmd, double max_force);
   void rememberLimits(const gz::sim::EntityComponentManager& ecm, gz::sim::Entity joint);
+  void applyToeTorsion(gz::sim::EntityComponentManager& ecm, double dt);
+
+  struct Toe {
+    gz::sim::Entity link = gz::sim::kNullEntity, collision = gz::sim::kNullEntity;
+    ToeTorsion friction;
+  };
 
   GazeboBuffers* buf_;
   gz::sim::Entity body_ = gz::sim::kNullEntity;
+  std::vector<Toe> toes_;                       // empty when toe_torsional is 0
   std::vector<gz::sim::Entity> joints_;         // size num_sdk_joints, kNullEntity for slots without a joint
   std::vector<gz::sim::Entity> wrist_joints_;   // 5 (kWristJointNames) when arm_configured
   Eigen::Vector3d wrist_axis_[5];               // joint-frame axis, for the transmitted torque's axis component
