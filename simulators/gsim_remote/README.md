@@ -72,6 +72,7 @@ and the result is identical to `gsim_backend mujoco`, bit for bit. One round tri
 | The server stops (Ctrl-C, window closed) | `ghost_sim` stops by itself and exits normally. |
 | The controller stops or crashes | The server stops. |
 | The server is paused (space bar in its window) | The controller waits in its step; Ctrl-C still stops it. |
+| Another user on the machine tries to connect | Refused: the socket file is readable and writable by its owner only. |
 | A socket file left by a crashed server | Replaced by the next server. A path another server is using is refused. |
 
 ## Limits

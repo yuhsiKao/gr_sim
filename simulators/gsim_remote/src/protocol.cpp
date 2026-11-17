@@ -2,6 +2,7 @@
 
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -94,7 +95,10 @@ int listenUnix(const std::string& path, std::string* err) {
     if (err) *err = errnoText("cannot create a socket for", path);
     return -1;
   }
-  if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 || listen(fd, 4) != 0) {
+  // Owner only, set before listen() so nobody else can connect in between: whoever connects
+  // drives the simulation.
+  if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 || chmod(path.c_str(), 0600) != 0 ||
+      listen(fd, 4) != 0) {
     if (err) *err = errnoText("cannot listen on", path);
     close(fd);
     return -1;
