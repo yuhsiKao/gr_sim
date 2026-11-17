@@ -92,6 +92,8 @@ void Robot::bspInit(int argc, char* argv[]) {
   cfg.log = logToLoguru;
   cfg.toe_friction = g_args.toe_friction;
   cfg.toe_solref = g_args.toe_solref;
+  cfg.server_path = g_args.server;
+  cfg.stop_requested = [this] { return !keep_alive.load(); };   // Ctrl-C while waiting for gsim_server
 
   std::string err;
   g_backend = gsim::makeBackend(g_args.backend, &err);
@@ -104,6 +106,7 @@ void Robot::bspInit(int argc, char* argv[]) {
     g_backend.reset();
     const std::string where = g_args.backend == "gazebo"   ? " (gsim_world " + g_args.world + ")"
                               : g_args.backend == "mujoco" ? " (gsim_scene " + g_args.scene + ")"
+                              : g_args.backend == "remote" ? " (gsim_server " + g_args.server + ")"
                                                            : "";
     return fail("gsim: " + e + where);
   }

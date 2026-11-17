@@ -25,7 +25,7 @@ Exit codes: 0 normal, 1 selftest failed, 2 configuration or start-up error.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `gsim_backend` | `mujoco` | `mujoco`, `bullet` or `gazebo`. |
+| `gsim_backend` | `mujoco` | `mujoco`, `bullet`, `gazebo` or `remote`. |
 | `gsim_headless` | `0` (`1` when `test > 0`) | `1` = no window. |
 | `gsim_rtf` | `1.0` | Real-time factor; `0` = as fast as possible. |
 | `gsim_control_rate` | `500` | The SDK's control rate in Hz (`CONTROL_RATE`), to match the robot's onboard computer. Must divide 2000 (e.g. `500`, `1000`). |
@@ -36,10 +36,15 @@ Exit codes: 0 normal, 1 selftest failed, 2 configuration or start-up error.
 | `gsim_selftest` | `0` | `1` = build the model, check it, exit (0 = pass). |
 | `gsim_toe_friction` | `"3.0 0.04 0"` | Toe friction (slide, torsional, rolling). Gazebo uses the first two. |
 | `gsim_toe_solref` | `"0.02 1"` | MuJoCo toe contact solref. |
+| `gsim_server` | (none) | With `gsim_backend remote`: the socket path of the physics server. |
 | `arm` | (off) | The SDK's own argument (as `launch.py -a`): `1` loads `vision60_arm.urdf`. |
 
 - **Physics always steps at 0.5 ms** (2000 Hz, as Ghost's Bullet sim). A scene or world with
   another step size is refused at start-up: with a 2 ms step the gait frequency more than doubles.
+- With `gsim_backend remote` the physics runs in `gsim_server`
+  ([`simulators/gsim_remote`](../simulators/gsim_remote/README.md)). The scene, the toe contact,
+  `gsim_rtf` and the window are then parameters of `gsim_server`; giving them to `ghost_sim` is an
+  error.
 - `gsim_control_rate` other than 500 Hz is logged as a warning: the SDK's default and Ghost's sims
   run 500 Hz. Measured on MuJoCo: 1000 Hz walks like 500 Hz; 250 Hz walks slower and rolls more.
 

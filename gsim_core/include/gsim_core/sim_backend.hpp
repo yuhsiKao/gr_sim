@@ -34,6 +34,8 @@ struct SimConfig {
   LogFn log;                                    // backends must not print directly
   std::array<double, 3> toe_friction{3.0, 0.04, 0.0};
   std::array<double, 2> toe_solref{0.02, 1.0};
+  std::string server_path;                      // remote only (gsim_server): the physics server's unix socket
+  std::function<bool()> stop_requested;         // remote only: true once the process is stopping (may be empty)
 };
 
 struct RobotSpec {

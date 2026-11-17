@@ -3,7 +3,7 @@
 add_library(gsim_backends STATIC src/backend_factory.cpp)
 target_include_directories(gsim_backends PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(gsim_backends PUBLIC gsim_core)
-foreach(sim mujoco bullet gazebo)
+foreach(sim mujoco bullet gazebo remote)
   string(TOUPPER ${sim} SIM)
   if(GSIM_WITH_${SIM})
     target_link_libraries(gsim_backends PUBLIC gsim_${sim})

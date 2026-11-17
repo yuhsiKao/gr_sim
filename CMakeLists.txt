@@ -11,6 +11,7 @@ endif()
 # Simulators compiled into ghost_sim; each is a package under simulators/.
 option(GSIM_WITH_MUJOCO "Build the MuJoCo simulator (simulators/gsim_mujoco)" ON)
 option(GSIM_WITH_BULLET "Build the Bullet simulator from the SDK's SimWrapper (simulators/gsim_bullet)" ON)
+option(GSIM_WITH_REMOTE "Build the remote backend and the physics server (simulators/gsim_remote, gsim_server)" ON)
 # GSIM_WITH_GAZEBO is defined in cmake/Gazebo.cmake (default: ON when gz-sim8 is found).
 
 # Ghost SDK: read-only. Taken from CONTROLS_INSTALL_DIR (source scripts/env.sh first).
@@ -51,12 +52,16 @@ if(GSIM_WITH_MUJOCO)
   list(PREPEND GSIM_RPATH "${GSIM_MUJOCO_LIBDIR}")
 endif()
 
-# Dependencies only point downwards: gsim_core <- simulators/* <- ghost_sim.
+# Dependencies only point downwards: gsim_core <- simulators/* <- ghost_sim, gsim_server.
 add_subdirectory(gsim_core)    # engine-agnostic layer: ISimBackend, simulation loop, parameters
 add_subdirectory(simulators)   # one package per simulator
 # the executable: SDK platform hooks + simulator factory. Its build files go to
 # build/ghost_sim-build because build/ghost_sim is the executable itself.
 add_subdirectory(ghost_sim ghost_sim-build)
+# the physics server for `gsim_backend remote`: MuJoCo behind a unix socket, without the SDK.
+if(GSIM_WITH_REMOTE AND GSIM_WITH_MUJOCO)
+  add_subdirectory(gsim_server gsim_server-build)
+endif()
 
 # Development tests. The project builds without them, so tests/ can be deleted.
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt)

@@ -11,6 +11,9 @@
 #ifdef GSIM_WITH_GAZEBO
 #include "gsim_gazebo/GazeboBackend.hpp"
 #endif
+#ifdef GSIM_WITH_REMOTE
+#include "gsim_remote/RemoteBackend.hpp"
+#endif
 
 namespace gsim {
 
@@ -27,6 +30,10 @@ std::unique_ptr<ISimBackend> makeBackend(const std::string& name, std::string* e
 #ifdef GSIM_WITH_GAZEBO
   if (name == "gazebo") return std::make_unique<GazeboBackend>();
   available += " gazebo";
+#endif
+#ifdef GSIM_WITH_REMOTE
+  if (name == "remote") return std::make_unique<RemoteBackend>();
+  available += " remote";
 #endif
   if (error) *error = "unknown simulator backend '" + name + "' (built in:" + available + ")";
   return nullptr;

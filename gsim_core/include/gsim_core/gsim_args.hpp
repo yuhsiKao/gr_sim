@@ -22,6 +22,9 @@ struct GsimArgs {
   std::array<double, 3> toe_friction{3.0, 0.04, 0.0};   // gsim_toe_friction "a b c"
   std::array<double, 2> toe_solref{0.02, 1.0};          // gsim_toe_solref "a b"
   bool toe_parse_ok = true;            // false if either toe parameter failed to parse
+  std::string server;                  // gsim_server: the physics server's socket path (gsim_backend remote, and gsim_server itself)
+  // gsim_backend remote: parameters that were given although they belong to the physics server.
+  std::vector<std::string> remote_conflicts;
 };
 
 struct GsimDefaults {
@@ -32,10 +35,17 @@ struct GsimDefaults {
 
 using ArgLookup = std::function<std::string(const std::string& key, const std::string& def)>;
 
+// With gsim_backend remote the physics runs in gsim_server, which owns the scene, the toe
+// contact, the real-time factor and the window: here headless is true, rtf is 0 (this side never
+// waits for the clock) and selftest is false; giving one of those parameters is an error.
 GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, int test_idx);
 
 // Empty = valid. Each message names the offending gsim_* parameter.
 std::vector<std::string> validateGsimArgs(const GsimArgs& a);
+
+// "key value" pairs from argv[1], argv[2], ... (the SDK's convention): the value of the first
+// pair whose key matches, otherwise def.
+ArgLookup argvLookup(int argc, char** argv);
 
 // The SDK writes user_params_config.yaml next to planner_config and .grlocaldata into
 // local_dir, both defaulting to the working directory. Empty = safe: both are given and

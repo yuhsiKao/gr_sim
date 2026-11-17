@@ -43,6 +43,9 @@ int parseInt(const std::string& s) {   // 0 unless the whole string is an intege
   return static_cast<int>(v);
 }
 
+// Parameters of the physics, which gsim_server owns when the backend is remote.
+constexpr const char* kServerOnly[] = {"gsim_scene", "gsim_world", "gsim_toe_friction", "gsim_toe_solref", "gsim_rtf", "gsim_selftest"};
+
 }  // namespace
 
 GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, int test_idx) {
@@ -59,14 +62,43 @@ GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, in
   const bool friction_ok = parseNumbers(lookup("gsim_toe_friction", "3.0 0.04 0"), a.toe_friction);
   const bool solref_ok = parseNumbers(lookup("gsim_toe_solref", "0.02 1"), a.toe_solref);
   a.toe_parse_ok = friction_ok && solref_ok;
+  a.server = lookup("gsim_server", "");
+  if (a.backend == "remote") {
+    const std::string unset = "\x01unset";
+    for (const char* name : kServerOnly)
+      if (lookup(name, unset) != unset) a.remote_conflicts.push_back(name);
+    if (const std::string h = lookup("gsim_headless", unset); h != unset && !parseFlag(h))
+      a.remote_conflicts.push_back("gsim_headless");
+    a.headless = true;
+    a.rtf = 0.0;
+    a.selftest = false;
+  }
   return a;
+}
+
+ArgLookup argvLookup(int argc, char** argv) {
+  std::vector<std::pair<std::string, std::string>> pairs;
+  for (int i = 1; i + 1 < argc; i += 2) pairs.emplace_back(argv[i], argv[i + 1]);
+  return [pairs](const std::string& key, const std::string& def) {
+    for (const auto& p : pairs)
+      if (p.first == key) return p.second;
+    return def;
+  };
 }
 
 std::vector<std::string> validateGsimArgs(const GsimArgs& a) {
   namespace fs = std::filesystem;
   std::vector<std::string> errs;
-  if (a.backend != "mujoco" && a.backend != "bullet" && a.backend != "gazebo")
-    errs.push_back("gsim_backend: unknown backend '" + a.backend + "' (expected mujoco, bullet or gazebo)");
+  if (a.backend != "mujoco" && a.backend != "bullet" && a.backend != "gazebo" && a.backend != "remote")
+    errs.push_back("gsim_backend: unknown backend '" + a.backend + "' (expected mujoco, bullet, gazebo or remote)");
+  if (a.backend == "remote") {
+    if (a.server.empty())
+      errs.push_back("gsim_server: required with gsim_backend remote (the physics server's socket path)");
+    for (const auto& name : a.remote_conflicts)
+      errs.push_back(name == "gsim_headless"
+                         ? "gsim_headless: always 1 with gsim_backend remote (the window belongs to gsim_server)"
+                         : name + ": set it on gsim_server, not on ghost_sim (gsim_backend remote)");
+  }
   if (!std::isfinite(a.rtf) || a.rtf < 0.0)
     errs.push_back("gsim_rtf: must be a finite number >= 0 (0 = as fast as possible)");
   if (const std::string e = controlRateError(a.control_rate); !e.empty()) errs.push_back(e);

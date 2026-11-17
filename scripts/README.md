@@ -9,6 +9,7 @@ the SDK's writable files are redirected to `run/`, and its Python runs with `-B`
 | --- | --- |
 | `env.sh` | Environment for the scripts and the build: `GSIM_PROJ`, `GSIM_PY`, SDK paths (`source scripts/env.sh`). |
 | `run_sim.sh` | Starts `ghost_sim` with the same SDK arguments as `launch.py -s`, redirected into `run/`. Extra arguments pass through; see [`ghost_sim/README.md`](../ghost_sim/README.md). |
+| `run_server.sh` | Starts `gsim_server`, the physics for `gsim_backend remote`; see [`simulators/gsim_remote/README.md`](../simulators/gsim_remote/README.md). |
 | `m0_official_sim.sh` | Starts Ghost's factory Bullet sim (`[arm 1]`), for comparison, without writing into the SDK. |
 | `mavgui.sh` | Ghost's MBLink GUI against the local simulation (127.0.0.1). |
 | `mavgui_launch.py` | Used by `mavgui.sh`: gamepad mapping, and a fix for mavgui's drop-down rows with pygame_gui >= 0.6.10. |

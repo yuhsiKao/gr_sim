@@ -17,18 +17,21 @@ The repository follows one guiding principle:
   `gsim_*` parameters and the CSV log. It knows neither a physics engine nor the Ghost SDK.
 - **Each simulator gets its own self-contained package** named `simulators/gsim_<name>`,
   depending only on `gsim_core` and its own engine.
-- **`ghost_sim` is the only executable** — it links the SDK and the simulators that were built in.
+- **`ghost_sim` is the executable** — it links the SDK and the simulators that were built in.
+- **`gsim_server` is the physics on its own** — a MuJoCo world without the SDK, which `ghost_sim`
+  reaches over a unix socket (`gsim_backend remote`).
 
-Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim`).
+Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim`, `gsim_server`).
 
 | `gsim_backend` | Package | Engine | Runs on | Role |
 | --- | --- | --- | --- | --- |
 | `mujoco` (default) | [`gsim_mujoco`](simulators/gsim_mujoco/README.md) | MuJoCo 4.0.0 | container or host | main simulator |
 | `bullet` | [`gsim_bullet`](simulators/gsim_bullet/README.md) | Bullet, through the SDK's SimWrapper | container or host | reference (Ghost's own physics and world) |
 | `gazebo` | [`gsim_gazebo`](simulators/gsim_gazebo/README.md) | Gazebo Harmonic (DART) | container | custom SDF worlds |
+| `remote` | [`gsim_remote`](simulators/gsim_remote/README.md) | MuJoCo, in `gsim_server` | container or host | physics in its own process |
 
-Every backend drives the legs, the arm (`arm 1`) and Ghost's synthetic depth camera (terrain
-perception). Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick runs every
+MuJoCo, Bullet and Gazebo drive the legs, the arm (`arm 1`) and Ghost's synthetic depth camera
+(terrain perception); the remote backend drives the legs. Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick runs every
 `2000 / gsim_control_rate` steps (500 Hz by default).
 
 ## Repository Layout
@@ -36,9 +39,10 @@ perception). Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick ru
 ```text
 gr_sim/
 ├── gsim_core/      # shared root: ISimBackend, simulation loop, gsim_* parameters, CSV log
-├── simulators/     # one package per simulator: gsim_mujoco, gsim_bullet, gsim_gazebo
+├── simulators/     # one package per simulator: gsim_mujoco, gsim_bullet, gsim_gazebo, gsim_remote
 ├── ghost_sim/      # the executable: the SDK's bsp hooks + the simulator factory
-├── scripts/        # run_sim.sh, mavgui.sh, rviz.sh, m0_official_sim.sh, check_sdk_untouched.sh
+├── gsim_server/    # the physics server for gsim_backend remote
+├── scripts/        # run_sim.sh, run_server.sh, mavgui.sh, rviz.sh, m0_official_sim.sh, check_sdk_untouched.sh
 ├── examples/       # scripts that command the robot over MBLink
 ├── ros2/           # ghost_interfaces: the controller's ROS 2 interface packages
 ├── third_party/    # GhostSDK_1.0.1: the Ghost SDK (submodule, read-only)
@@ -64,6 +68,9 @@ scripts/run_sim.sh gsim_scene simulators/gsim_mujoco/models/scene_stairs.xml   #
 scripts/run_sim.sh gsim_backend bullet               # Bullet, Ghost's world
 scripts/run_sim.sh gsim_backend gazebo               # Gazebo, flat ground
 scripts/run_sim.sh gsim_backend gazebo gsim_world simulators/gsim_gazebo/models/world_stairs.sdf
+# ... or with the physics in its own process (start the server first, in its own terminal)
+scripts/run_server.sh gsim_server /tmp/gsim.sock
+scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
 
 # 2. Options, appended to any line above
 #    arm 1              with the arm
@@ -97,6 +104,7 @@ Ctrl-C stops `ghost_sim`; close the window to stop the factory sim. All paramete
 - [`ghost_sim/README.md`](ghost_sim/README.md) — parameters, arm, terrain perception, CSV log.
 - [`gsim_core/README.md`](gsim_core/README.md) — the shared interface layer.
 - [`simulators/README.md`](simulators/README.md) — the simulator packages.
+- [`simulators/gsim_remote/README.md`](simulators/gsim_remote/README.md) — the physics server and the remote backend.
 - [`scripts/README.md`](scripts/README.md) — the scripts, mavgui / gamepad notes.
 - [`examples/README.md`](examples/README.md) — MBLink example scripts and grasping in simulation.
 
