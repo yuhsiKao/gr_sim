@@ -94,6 +94,7 @@ void Robot::bspInit(int argc, char* argv[]) {
   cfg.toe_solref = g_args.toe_solref;
   cfg.server_path = g_args.server;
   cfg.stop_requested = [this] { return !keep_alive.load(); };   // Ctrl-C while waiting for gsim_server
+  cfg.robot_index = g_args.robot;
 
   std::string err;
   g_backend = gsim::makeBackend(g_args.backend, &err);
@@ -174,7 +175,8 @@ void Robot::bspBegin() {
   SimLLC sim_llc(&S, &C, &L->Sw, &L->Cw, g_backend->timestep());
   sim_llc.initLLCCallbacks(L);
   const int num_joints = L->get_total_num_joints();
-  const auto spec = robotSpec(L, b_arm_, g_args.urdf_dir + "/" + *urdf, b_fixed_base_, b_inverted_start_);
+  auto spec = robotSpec(L, b_arm_, g_args.urdf_dir + "/" + *urdf, b_fixed_base_, b_inverted_start_);
+  gsim::applySpawn(spec, g_args.spawn);   // gsim_spawn: where on the ground it starts
   const bool has_arm = !spec.arm_joints.empty();
   const std::string arm_err = gsim::armSupportError(*g_backend, has_arm, g_args.backend);
   if (!arm_err.empty()) return abort_begin("gsim: " + arm_err);

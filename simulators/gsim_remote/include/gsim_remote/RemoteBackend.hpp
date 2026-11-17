@@ -3,7 +3,8 @@
 // go out, the state comes back. The server decides how fast simulated time runs, pauses and
 // owns the window; this side only waits for it.
 //
-// Version 1: one robot, legs only (no arm, no depth camera).
+// The server's world may hold several robots; this backend is one of them (SimConfig::robot_index).
+// Legs only (no arm, no depth camera).
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -46,6 +47,7 @@ class RemoteBackend final : public ISimBackend {
   std::function<bool()> stop_requested_;
   bool alive_ = false;
   double timestep_ = 0.0;
+  int num_robots_ = 1;   // of the server's world
   int num_joints_ = 0;
   uint64_t seq_ = 0;
   Step out_{};

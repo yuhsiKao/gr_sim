@@ -1,5 +1,6 @@
 // Version-1 robot support policy and initial pose, shared by all backends.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -20,5 +21,9 @@ std::optional<std::string> chooseV1Urdf(bool is_ngr, uint32_t robot_version, boo
 // Same initial pose as the SDK's Bullet resetSim(): dropped from z = 0.4 m
 // (1.6 m when the base is fixed), rolled by pi when starting inverted.
 RobotSpec makeRobotSpec(const std::string& urdf_path, int num_sdk_joints, bool fixed_base, bool inverted);
+
+// gsim_spawn "x y yaw_deg": where on the ground the robot starts and which way it faces. The
+// height, roll and pitch of makeRobotSpec stay.
+void applySpawn(RobotSpec& spec, const std::array<double, 3>& spawn);
 
 }  // namespace gsim

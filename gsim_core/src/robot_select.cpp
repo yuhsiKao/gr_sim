@@ -25,4 +25,10 @@ RobotSpec makeRobotSpec(const std::string& urdf_path, int num_sdk_joints, bool f
   return s;
 }
 
+void applySpawn(RobotSpec& spec, const std::array<double, 3>& spawn) {
+  spec.pos0_W.x() = static_cast<float>(spawn[0]);
+  spec.pos0_W.y() = static_cast<float>(spawn[1]);
+  spec.rpy0.z() = static_cast<float>(spawn[2] * M_PI / 180.0);
+}
+
 }  // namespace gsim

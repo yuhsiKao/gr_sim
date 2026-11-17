@@ -19,7 +19,8 @@ The repository follows one guiding principle:
   depending only on `gsim_core` and its own engine.
 - **`ghost_sim` is the executable** — it links the SDK and the simulators that were built in.
 - **`gsim_server` is the physics on its own** — a MuJoCo world without the SDK, which `ghost_sim`
-  reaches over a unix socket (`gsim_backend remote`).
+  reaches over a unix socket (`gsim_backend remote`). One world can hold several robots, each
+  driven by its own `ghost_sim`.
 
 Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim`, `gsim_server`).
 
@@ -28,7 +29,7 @@ Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim
 | `mujoco` (default) | [`gsim_mujoco`](simulators/gsim_mujoco/README.md) | MuJoCo 4.0.0 | container or host | main simulator |
 | `bullet` | [`gsim_bullet`](simulators/gsim_bullet/README.md) | Bullet, through the SDK's SimWrapper | container or host | reference (Ghost's own physics and world) |
 | `gazebo` | [`gsim_gazebo`](simulators/gsim_gazebo/README.md) | Gazebo Harmonic (DART) | container | custom SDF worlds |
-| `remote` | [`gsim_remote`](simulators/gsim_remote/README.md) | MuJoCo, in `gsim_server` | container or host | physics in its own process |
+| `remote` | [`gsim_remote`](simulators/gsim_remote/README.md) | MuJoCo, in `gsim_server` | container or host | physics in its own process; several robots in one world |
 
 MuJoCo, Bullet and Gazebo drive the legs, the arm (`arm 1`) and Ghost's synthetic depth camera
 (terrain perception); the remote backend drives the legs. Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick runs every
@@ -71,6 +72,9 @@ scripts/run_sim.sh gsim_backend gazebo gsim_world simulators/gsim_gazebo/models/
 # ... or with the physics in its own process (start the server first, in its own terminal)
 scripts/run_server.sh gsim_server /tmp/gsim.sock
 scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
+# ... or two robots in one world, each controller in its own container (on the host; see
+# simulators/gsim_remote/README.md)
+scripts/multi.sh up && scripts/multi.sh server       # then: scripts/multi.sh robot 0, robot 1, mavgui 0, mavgui 1
 
 # 2. Options, appended to any line above
 #    arm 1              with the arm
@@ -104,7 +108,7 @@ Ctrl-C stops `ghost_sim`; close the window to stop the factory sim. All paramete
 - [`ghost_sim/README.md`](ghost_sim/README.md) — parameters, arm, terrain perception, CSV log.
 - [`gsim_core/README.md`](gsim_core/README.md) — the shared interface layer.
 - [`simulators/README.md`](simulators/README.md) — the simulator packages.
-- [`simulators/gsim_remote/README.md`](simulators/gsim_remote/README.md) — the physics server and the remote backend.
+- [`simulators/gsim_remote/README.md`](simulators/gsim_remote/README.md) — the physics server, the remote backend and several robots in one world.
 - [`scripts/README.md`](scripts/README.md) — the scripts, mavgui / gamepad notes.
 - [`examples/README.md`](examples/README.md) — MBLink example scripts and grasping in simulation.
 

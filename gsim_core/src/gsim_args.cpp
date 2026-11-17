@@ -1,6 +1,7 @@
 #include "gsim_core/gsim_args.hpp"
 
 #include "gsim_core/sim_loop.hpp"
+#include "gsim_core/sim_world.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -43,6 +44,17 @@ int parseInt(const std::string& s) {   // 0 unless the whole string is an intege
   return static_cast<int>(v);
 }
 
+int parseIntOr(const std::string& s, int bad) {   // bad unless the whole string is an integer
+  char* end = nullptr;
+  const long v = std::strtol(s.c_str(), &end, 10);
+  if (s.empty() || end == s.c_str() || *end != '\0' || v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max())
+    return bad;
+  return static_cast<int>(v);
+}
+
+// Parameters of the controller, which gsim_server refuses.
+constexpr const char* kControllerOnly[] = {"gsim_robot", "gsim_spawn", "gsim_control_rate", "gsim_log"};
+
 // Parameters of the physics, which gsim_server owns when the backend is remote.
 constexpr const char* kServerOnly[] = {"gsim_scene", "gsim_world", "gsim_toe_friction", "gsim_toe_solref", "gsim_rtf", "gsim_selftest"};
 
@@ -73,6 +85,13 @@ GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, in
     a.rtf = 0.0;
     a.selftest = false;
   }
+  a.robot = parseIntOr(lookup("gsim_robot", "0"), -1);
+  a.robots = parseIntOr(lookup("gsim_robots", "1"), -1);
+  a.spawn_ok = parseNumbers(lookup("gsim_spawn", "0 0 0"), a.spawn);
+  const std::string unset = "\x01unset";
+  a.robots_given = lookup("gsim_robots", unset) != unset;
+  for (const char* name : kControllerOnly)
+    if (lookup(name, unset) != unset) a.controller_only_given.push_back(name);
   return a;
 }
 
@@ -86,8 +105,37 @@ ArgLookup argvLookup(int argc, char** argv) {
   };
 }
 
-std::vector<std::string> validateGsimArgs(const GsimArgs& a) {
+namespace {
+
+// Checks shared by ghost_sim and gsim_server: the parameters of the physics.
+void physicsErrors(const GsimArgs& a, std::vector<std::string>& errs) {
   namespace fs = std::filesystem;
+  if (!std::isfinite(a.rtf) || a.rtf < 0.0)
+    errs.push_back("gsim_rtf: must be a finite number >= 0 (0 = as fast as possible)");
+  if (!a.toe_parse_ok)
+    errs.push_back("gsim_toe_friction / gsim_toe_solref: expected 3 and 2 numbers, e.g. \"3.0 0.04 0\" and \"0.02 1\"");
+  const fs::path urdf = fs::path(a.urdf_dir) / "vision60.urdf";
+  if (!fs::exists(urdf))
+    errs.push_back("gsim_urdf_dir: " + urdf.string() + " not found (check CONTROLS_INSTALL_DIR)");
+  if (a.backend == "mujoco" && !fs::exists(a.scene))
+    errs.push_back("gsim_scene: " + a.scene + " not found");
+  if (a.backend == "gazebo" && !fs::exists(a.world))
+    errs.push_back("gsim_world: " + a.world + " not found");
+}
+
+}  // namespace
+
+std::vector<std::string> validateServerArgs(const GsimArgs& a) {
+  std::vector<std::string> errs;
+  if (a.server.empty()) errs.push_back("gsim_server: required (the socket path the controllers connect to)");
+  if (a.robots < 1 || a.robots > kMaxRobots)
+    errs.push_back("gsim_robots: must be an integer 1.." + std::to_string(kMaxRobots));
+  for (const auto& name : a.controller_only_given) errs.push_back(name + ": set it on ghost_sim, not on gsim_server");
+  physicsErrors(a, errs);
+  return errs;
+}
+
+std::vector<std::string> validateGsimArgs(const GsimArgs& a) {
   std::vector<std::string> errs;
   if (a.backend != "mujoco" && a.backend != "bullet" && a.backend != "gazebo" && a.backend != "remote")
     errs.push_back("gsim_backend: unknown backend '" + a.backend + "' (expected mujoco, bullet, gazebo or remote)");
@@ -99,18 +147,17 @@ std::vector<std::string> validateGsimArgs(const GsimArgs& a) {
                          ? "gsim_headless: always 1 with gsim_backend remote (the window belongs to gsim_server)"
                          : name + ": set it on gsim_server, not on ghost_sim (gsim_backend remote)");
   }
-  if (!std::isfinite(a.rtf) || a.rtf < 0.0)
-    errs.push_back("gsim_rtf: must be a finite number >= 0 (0 = as fast as possible)");
   if (const std::string e = controlRateError(a.control_rate); !e.empty()) errs.push_back(e);
-  if (!a.toe_parse_ok)
-    errs.push_back("gsim_toe_friction / gsim_toe_solref: expected 3 and 2 numbers, e.g. \"3.0 0.04 0\" and \"0.02 1\"");
-  const fs::path urdf = fs::path(a.urdf_dir) / "vision60.urdf";
-  if (!fs::exists(urdf))
-    errs.push_back("gsim_urdf_dir: " + urdf.string() + " not found (check CONTROLS_INSTALL_DIR)");
-  if (a.backend == "mujoco" && !fs::exists(a.scene))
-    errs.push_back("gsim_scene: " + a.scene + " not found");
-  if (a.backend == "gazebo" && !fs::exists(a.world))
-    errs.push_back("gsim_world: " + a.world + " not found");
+  if (a.robots_given) errs.push_back("gsim_robots: set it on gsim_server, not on ghost_sim");
+  if (a.robot < 0 || a.robot >= kMaxRobots)
+    errs.push_back("gsim_robot: must be an integer 0.." + std::to_string(kMaxRobots - 1));
+  else if (a.robot != 0 && a.backend != "remote")
+    errs.push_back("gsim_robot: only with gsim_backend remote");
+  if (!a.spawn_ok)
+    errs.push_back("gsim_spawn: expected \"x y yaw_deg\", e.g. \"0 1.5 90\"");
+  else if (a.backend == "bullet" && (a.spawn[0] != 0.0 || a.spawn[1] != 0.0))
+    errs.push_back("gsim_spawn: the Bullet simulator always starts the robot at x = y = 0 (only the yaw is used)");
+  physicsErrors(a, errs);
   return errs;
 }
 

@@ -60,6 +60,22 @@ docker compose -f docker/compose.yaml down        # stop
 Rebuild the image only after changing `docker/Dockerfile` or `docker/requirements-mavgui.txt`, then
 `up -d` again to replace the container. Nothing is lost: everything you work on is on the host.
 
+## Several Robots
+
+`docker/compose.multi.yaml` is a second, separate setup for several robots in one world: the same
+image and mounts, but one container per program instead of host networking.
+
+| Container | Runs | Network |
+| --- | --- | --- |
+| `gr-physics` | `gsim_server`: the world and its window | bridge |
+| `gr-robot-0`, `gr-robot-1` | one `ghost_sim` each, and that robot's mavgui | bridge, each its own namespace; DDS domain 124 + index |
+
+Every controller binds the SDK's fixed MBLink port, so each needs a network namespace of its own;
+the socket to the physics is a file in the mounted repository folder (`gr_sim/run/gsim.sock`).
+`scripts/multi.sh` starts the containers and runs the programs in them; see
+[`simulators/gsim_remote/README.md`](../simulators/gsim_remote/README.md). For one more robot, copy
+a `gr-robot-<i>` block in the compose file and raise its three numbers.
+
 ## Notes
 
 - The container shares the host network: run one simulation at a time, in the container or on

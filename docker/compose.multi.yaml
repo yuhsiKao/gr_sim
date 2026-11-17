@@ -1,0 +1,60 @@
+# Several robots in one world: one container for the physics (gsim_server) and one per robot
+# (ghost_sim with gsim_backend remote, and that robot's mavgui). Every robot needs its own network
+# namespace because the SDK's MBLink port is fixed, and its own DDS domain because the SDK's topics
+# carry no robot name. Usage: docker/README.md and scripts/multi.sh.
+# The image and the mounts are those of compose.yaml; per-machine settings: docker/.env.
+name: gr-multi
+
+x-gr: &gr
+  image: gr-sim:dev
+  gpus: all
+  device_cgroup_rules:
+    - "c 13:* rmw"       # gamepads, as in compose.yaml
+  working_dir: /root/gr_sim
+  tty: true
+  stdin_open: true
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - /dev/input:/dev/input
+    # the folder that holds this repository; it also carries the socket the containers share
+    # (gr_sim/run/gsim.sock)
+    - ../..:/root
+    - ../build-docker:/root/gr_sim/build
+    - type: bind
+      source: ${CONTROLS_INSTALL_DIR:-../third_party/GhostSDK_1.0.1/GhostSDK_bullet_linux}
+      target: /ws/GhostSDK_bullet_linux
+      read_only: true
+      bind:
+        create_host_path: false
+
+x-env: &env
+  DISPLAY: ${DISPLAY}
+  QT_X11_NO_MITSHM: "1"
+  NVIDIA_DRIVER_CAPABILITIES: all
+  CONTROLS_INSTALL_DIR: /ws/GhostSDK_bullet_linux
+
+services:
+  gr-physics:
+    <<: *gr
+    container_name: gr-physics
+    environment:
+      <<: *env
+
+  # A robot: its own network namespace (the default bridge network of this file), DDS domain
+  # 124 + index, and its own folder for the files the controller writes. Copy a block and raise
+  # the three numbers for one more robot.
+  gr-robot-0:
+    <<: *gr
+    container_name: gr-robot-0
+    environment:
+      <<: *env
+      ROS_DOMAIN_ID: "124"
+      GSIM_RUN_DIR: /root/gr_sim/run/robot0
+
+  gr-robot-1:
+    <<: *gr
+    container_name: gr-robot-1
+    environment:
+      <<: *env
+      ROS_DOMAIN_ID: "125"
+      GSIM_RUN_DIR: /root/gr_sim/run/robot1

@@ -60,16 +60,23 @@ const char* nameOf(const mjModel* m, mjtObj type, int id) {
   return s ? s : "";
 }
 
-// Robot geoms collide with the world only (never with each other), matching
-// Bullet's URDF loading without URDF_USE_SELF_COLLISION. Visual geoms arrive from
-// the URDF importer as group 1 with contype = conaffinity = 0 and are left alone.
-void configureGeoms(mjsBody* base, const ModelOptions& opt) {
+// A robot's geoms never collide with each other, matching Bullet's URDF loading without
+// URDF_USE_SELF_COLLISION. They collide with the world (bit 0 of contype against the world's
+// conaffinity) and, when the model holds several robots, with the other robots: robot i also
+// carries bit i + 1 in contype and every other robot's bit in conaffinity. A single robot keeps
+// contype 1, conaffinity 0. Visual geoms arrive from the URDF importer as group 1 with
+// contype = conaffinity = 0 and are left alone.
+void configureGeoms(mjsBody* base, const WorldOptions& opt, int robot, const std::string& prefix) {
+  const int n = static_cast<int>(opt.robots.size());
+  const int own = n > 1 ? 1 << (robot + 1) : 0;
+  const int others = n > 1 ? (((1 << n) - 1) << 1) & ~own : 0;
+  const std::string toe = prefix + "toe";
   for (mjsElement* e = mjs_firstChild(base, mjOBJ_GEOM, 1); e; e = mjs_nextChild(base, e, 1)) {
     mjsGeom* g = mjs_asGeom(e);
     if (g->contype == 0 && g->conaffinity == 0) continue;
-    g->contype = 1;
-    g->conaffinity = 0;
-    if (startsWith(elementName(mjs_getParent(e)->element), "toe")) {
+    g->contype = 1 | own;
+    g->conaffinity = others;
+    if (startsWith(elementName(mjs_getParent(e)->element), toe.c_str())) {
       // condim 4 turns the torsional coefficient on: Ghost's Bullet toes have spinning_friction,
       // and the legs have no vertical-axis joint, so a toe that cannot spin holds the body's yaw.
       g->condim = kToeCondim;
@@ -111,33 +118,34 @@ void addTrackerActuator(mjSpec* spec, const std::string& name, const std::string
   a->forcerange[1] = 1.0;
 }
 
-void addMotors(mjSpec* spec, int num_sdk_joints) {
+// Actuator and joint names below carry the robot's prefix (p), see robotPrefix().
+void addMotors(mjSpec* spec, const std::string& p, int num_sdk_joints) {
   for (int j = 0; j < num_sdk_joints; ++j) {
     const std::string joint = std::to_string(j);
-    if (!mjs_findElement(spec, mjOBJ_JOINT, joint.c_str())) continue;
-    addTorqueActuator(spec, "m" + joint, joint);
+    if (!mjs_findElement(spec, mjOBJ_JOINT, (p + joint).c_str())) continue;
+    addTorqueActuator(spec, p + "m" + joint, p + joint);
   }
 }
 
-void addArmActuators(mjSpec* spec, const std::vector<int>& arm_joints) {
+void addArmActuators(mjSpec* spec, const std::string& p, const std::vector<int>& arm_joints) {
   for (int id : arm_joints) {
     const std::string joint = std::to_string(id);
-    if (mjs_findElement(spec, mjOBJ_JOINT, joint.c_str()))
-      addTrackerActuator(spec, "lock" + joint, joint);
+    if (mjs_findElement(spec, mjOBJ_JOINT, (p + joint).c_str()))
+      addTrackerActuator(spec, p + "lock" + joint, p + joint);
   }
   for (const char* w : kWristJointNames) {
-    if (!mjs_findElement(spec, mjOBJ_JOINT, w)) continue;
-    addTrackerActuator(spec, std::string("ws_") + w, w);
-    addTorqueActuator(spec, std::string("wt_") + w, w);
+    if (!mjs_findElement(spec, mjOBJ_JOINT, (p + w).c_str())) continue;
+    addTrackerActuator(spec, p + "ws_" + w, p + w);
+    addTorqueActuator(spec, p + "wt_" + w, p + w);
   }
 }
 
 // Ghost's synthetic depth camera (FactoryDepthCamera): 6 cm below the body origin, looking along the
 // body's -z with the image top towards the body's +x. A MuJoCo camera looks along its own -z with its
 // +y up, so its frame is the body frame turned by -90 deg about z.
-void addDepthCamera(mjsBody* base) {
+void addDepthCamera(mjsBody* base, const std::string& prefix) {
   mjsCamera* cam = mjs_addCamera(base, nullptr);
-  mjs_setName(cam->element, kDepthCameraName);
+  mjs_setName(cam->element, (prefix + kDepthCameraName).c_str());
   const Eigen::Vector3f pos = FactoryDepthCamera::bodyFromCamera().translation();
   for (int i = 0; i < 3; ++i) cam->pos[i] = pos[i];
   const double h = std::sqrt(0.5);
@@ -179,106 +187,169 @@ int urdfDistinctMeshes(const std::string& text) {
 
 }  // namespace
 
-BuiltModel buildMujocoModel(const ModelOptions& opt) {
-  BuiltModel out;
-  ScopedWarningCapture capture(&out.warnings);
-  if (!fs::exists(opt.urdf_path)) {
-    out.error = "URDF not found: " + opt.urdf_path;
-    return out;
+std::string robotPrefix(int robot, int num_robots) {
+  return num_robots > 1 ? "r" + std::to_string(robot) + "_" : std::string();
+}
+
+namespace {
+
+// Parses robot's URDF and attaches it to the scene under its prefix. Returns the robot's spec
+// (kept alive until the scene is compiled), or null with *error set.
+SpecPtr attachRobot(mjSpec* scene, const WorldOptions& opt, int robot, std::string* error) {
+  const RobotOptions& r = opt.robots[robot];
+  const std::string p = robotPrefix(robot, static_cast<int>(opt.robots.size()));
+  SpecPtr none(nullptr, &mj_deleteSpec);
+  if (!fs::exists(r.urdf_path)) {
+    *error = "URDF not found: " + r.urdf_path;
+    return none;
   }
-  const std::string urdf_dir = fs::path(opt.urdf_path).parent_path().string();
+  const std::string urdf_dir = fs::path(r.urdf_path).parent_path().string();
 
   // Keep toe bodies (fusestatic=false) and visual meshes; never written back to disk.
-  std::string urdf = readFile(opt.urdf_path);
+  std::string urdf = readFile(r.urdf_path);
   const size_t tag = urdf.find("<robot");
   const size_t close = tag == std::string::npos ? std::string::npos : urdf.find('>', tag);
   if (close == std::string::npos) {
-    out.error = "no <robot> element in " + opt.urdf_path;
-    return out;
+    *error = "no <robot> element in " + r.urdf_path;
+    return none;
   }
   urdf.insert(close + 1, "<mujoco><compiler fusestatic=\"false\" discardvisual=\"false\" meshdir=\"" + urdf_dir +
                              "/\"/></mujoco>");
 
   char err[1024] = "";
-  SpecPtr robot(mj_parseXMLString(urdf.c_str(), nullptr, err, sizeof(err)), &mj_deleteSpec);
-  if (!robot) {
-    out.error = "failed to parse " + opt.urdf_path + ": " + err;
-    return out;
+  SpecPtr spec(mj_parseXMLString(urdf.c_str(), nullptr, err, sizeof(err)), &mj_deleteSpec);
+  if (!spec) {
+    *error = "failed to parse " + r.urdf_path + ": " + err;
+    return none;
   }
-  for (mjsElement* e = mjs_firstElement(robot.get(), mjOBJ_MESH); e; e = mjs_nextElement(robot.get(), e)) {
+  for (mjsElement* e = mjs_firstElement(spec.get(), mjOBJ_MESH); e; e = mjs_nextElement(spec.get(), e)) {
     mjsMesh* mesh = mjs_asMesh(e);
     const std::string file = mjs_getString(mesh->file);
     if (!file.empty() && fs::path(file).is_relative())
       mjs_setString(mesh->file, (fs::path(urdf_dir) / file).string().c_str());
   }
 
-  SpecPtr scene(mj_parseXML(opt.scene_path.c_str(), nullptr, err, sizeof(err)), &mj_deleteSpec);
-  if (!scene) {
-    out.error = "failed to parse scene " + opt.scene_path + ": " + err;
-    return out;
-  }
-
-  mjsBody* robot_root = mjs_findBody(robot.get(), "body");
+  mjsBody* robot_root = mjs_findBody(spec.get(), "body");
   if (!robot_root) {
-    out.error = "URDF " + opt.urdf_path + " has no link named 'body'";
-    return out;
+    *error = "URDF " + r.urdf_path + " has no link named 'body'";
+    return none;
   }
   // MuJoCo: a body can only be attached to a frame (or site), not directly to a body.
-  mjsFrame* mount = mjs_addFrame(mjs_findBody(scene.get(), "world"), nullptr);
-  if (!mjs_attach(mount->element, robot_root->element, "", "")) {
-    out.error = std::string("failed to attach robot to scene: ") + mjs_getError(scene.get());
-    return out;
+  mjsFrame* mount = mjs_addFrame(mjs_findBody(scene, "world"), nullptr);
+  if (!mjs_attach(mount->element, robot_root->element, p.c_str(), "")) {
+    *error = std::string("failed to attach robot to scene: ") + mjs_getError(scene);
+    return none;
   }
 
-  mjsBody* base = mjs_findBody(scene.get(), "body");
-  for (int i = 0; i < 3; ++i) base->pos[i] = opt.base_pos[i];
-  base->quat[0] = opt.base_quat.w();
-  base->quat[1] = opt.base_quat.x();
-  base->quat[2] = opt.base_quat.y();
-  base->quat[3] = opt.base_quat.z();
-  if (!opt.fixed_base) mjs_addFreeJoint(base);
-  configureGeoms(base, opt);
+  mjsBody* base = mjs_findBody(scene, (p + "body").c_str());
+  for (int i = 0; i < 3; ++i) base->pos[i] = r.base_pos[i];
+  base->quat[0] = r.base_quat.w();
+  base->quat[1] = r.base_quat.x();
+  base->quat[2] = r.base_quat.y();
+  base->quat[3] = r.base_quat.z();
+  if (!r.fixed_base) mjs_addFreeJoint(base);
+  configureGeoms(base, opt, robot, p);
   removeJointForceLimits(base);
-  addMotors(scene.get(), opt.num_sdk_joints);
-  addDepthCamera(base);
-  if (!opt.arm_joints.empty()) addArmActuators(scene.get(), opt.arm_joints);
+  addMotors(scene, p, r.num_sdk_joints);
+  addDepthCamera(base, p);
+  if (!r.arm_joints.empty()) addArmActuators(scene, p, r.arm_joints);
+  return spec;
+}
 
-  out.model = mj_compile(scene.get(), nullptr);
-  if (!out.model) {
-    out.error = std::string("MuJoCo compile failed: ") + mjs_getError(scene.get());
-    return out;
+// Where robot's joints, actuators and camera ended up in the compiled model.
+BuiltRobot mapRobot(const mjModel* m, const RobotOptions& r, const std::string& p) {
+  BuiltRobot out;
+  auto id = [m, &p](mjtObj type, const std::string& name) { return mj_name2id(m, type, (p + name).c_str()); };
+  out.base_body = id(mjOBJ_BODY, "body");
+  out.depth_camera = id(mjOBJ_CAMERA, kDepthCameraName);
+  if (!r.fixed_base && out.base_body >= 0 && m->body_jntnum[out.base_body] > 0) {
+    const int free_joint = m->body_jntadr[out.base_body];   // the base body's only joint
+    out.free_qposadr = m->jnt_qposadr[free_joint];
+    out.free_dofadr = m->jnt_dofadr[free_joint];
   }
-
-  const mjModel* m = out.model;
-  out.base_body = mj_name2id(m, mjOBJ_BODY, "body");
-  out.depth_camera = mj_name2id(m, mjOBJ_CAMERA, kDepthCameraName);
-  out.joints.qposadr.assign(opt.num_sdk_joints, -1);
-  out.joints.dofadr.assign(opt.num_sdk_joints, -1);
-  out.joints.actuator.assign(opt.num_sdk_joints, -1);
-  for (int j = 0; j < opt.num_sdk_joints; ++j) {
+  out.joints.qposadr.assign(r.num_sdk_joints, -1);
+  out.joints.dofadr.assign(r.num_sdk_joints, -1);
+  out.joints.actuator.assign(r.num_sdk_joints, -1);
+  for (int j = 0; j < r.num_sdk_joints; ++j) {
     const std::string joint = std::to_string(j);
-    const int id = mj_name2id(m, mjOBJ_JOINT, joint.c_str());
-    if (id < 0) continue;
-    out.joints.qposadr[j] = m->jnt_qposadr[id];
-    out.joints.dofadr[j] = m->jnt_dofadr[id];
-    out.joints.actuator[j] = mj_name2id(m, mjOBJ_ACTUATOR, ("m" + joint).c_str());
+    const int jnt = id(mjOBJ_JOINT, joint);
+    if (jnt < 0) continue;
+    out.joints.qposadr[j] = m->jnt_qposadr[jnt];
+    out.joints.dofadr[j] = m->jnt_dofadr[jnt];
+    out.joints.actuator[j] = id(mjOBJ_ACTUATOR, "m" + joint);
   }
-  if (!opt.arm_joints.empty()) {
-    out.arm.joints = opt.arm_joints;
-    for (int id : opt.arm_joints)
-      out.arm.lock_actuator.push_back(mj_name2id(m, mjOBJ_ACTUATOR, ("lock" + std::to_string(id)).c_str()));
+  if (!r.arm_joints.empty()) {
+    out.arm.joints = r.arm_joints;
+    for (int a : r.arm_joints) out.arm.lock_actuator.push_back(id(mjOBJ_ACTUATOR, "lock" + std::to_string(a)));
     out.arm.has_wrist = true;
     for (int i = 0; i < 5; ++i) {
-      const int jnt = mj_name2id(m, mjOBJ_JOINT, kWristJointNames[i]);
+      const int jnt = id(mjOBJ_JOINT, kWristJointNames[i]);
       if (jnt < 0) {
         out.arm.has_wrist = false;
         continue;
       }
       out.arm.wrist_qposadr[i] = m->jnt_qposadr[jnt];
       out.arm.wrist_dofadr[i] = m->jnt_dofadr[jnt];
-      out.arm.wrist_servo[i] = mj_name2id(m, mjOBJ_ACTUATOR, (std::string("ws_") + kWristJointNames[i]).c_str());
-      out.arm.wrist_torque[i] = mj_name2id(m, mjOBJ_ACTUATOR, (std::string("wt_") + kWristJointNames[i]).c_str());
+      out.arm.wrist_servo[i] = id(mjOBJ_ACTUATOR, std::string("ws_") + kWristJointNames[i]);
+      out.arm.wrist_torque[i] = id(mjOBJ_ACTUATOR, std::string("wt_") + kWristJointNames[i]);
     }
+  }
+  return out;
+}
+
+}  // namespace
+
+BuiltWorld buildMujocoWorld(const WorldOptions& opt) {
+  BuiltWorld out;
+  ScopedWarningCapture capture(&out.warnings);
+  const int n = static_cast<int>(opt.robots.size());
+  if (n < 1 || n > kMaxRobots) {
+    out.error = std::to_string(n) + " robots: a world holds 1 to " + std::to_string(kMaxRobots);
+    return out;
+  }
+  char err[1024] = "";
+  SpecPtr scene(mj_parseXML(opt.scene_path.c_str(), nullptr, err, sizeof(err)), &mj_deleteSpec);
+  if (!scene) {
+    out.error = "failed to parse scene " + opt.scene_path + ": " + err;
+    return out;
+  }
+  std::vector<SpecPtr> robots;   // alive until the scene is compiled
+  for (int i = 0; i < n; ++i) {
+    robots.push_back(attachRobot(scene.get(), opt, i, &out.error));
+    if (!robots.back()) return out;
+  }
+  out.model = mj_compile(scene.get(), nullptr);
+  if (!out.model) {
+    out.error = std::string("MuJoCo compile failed: ") + mjs_getError(scene.get());
+    return out;
+  }
+  for (int i = 0; i < n; ++i) out.robots.push_back(mapRobot(out.model, opt.robots[i], robotPrefix(i, n)));
+  return out;
+}
+
+BuiltModel buildMujocoModel(const ModelOptions& opt) {
+  WorldOptions w;
+  w.scene_path = opt.scene_path;
+  w.toe_friction = opt.toe_friction;
+  w.toe_solref = opt.toe_solref;
+  RobotOptions r;
+  r.urdf_path = opt.urdf_path;
+  r.num_sdk_joints = opt.num_sdk_joints;
+  r.fixed_base = opt.fixed_base;
+  r.base_pos = opt.base_pos;
+  r.base_quat = opt.base_quat;
+  r.arm_joints = opt.arm_joints;
+  w.robots.push_back(r);
+  BuiltWorld built = buildMujocoWorld(w);
+  BuiltModel out;
+  out.model = built.model;
+  out.error = built.error;
+  out.warnings = built.warnings;
+  if (!built.robots.empty()) {
+    out.joints = built.robots[0].joints;
+    out.arm = built.robots[0].arm;
+    out.base_body = built.robots[0].base_body;
+    out.depth_camera = built.robots[0].depth_camera;
   }
   return out;
 }

@@ -9,7 +9,6 @@ namespace {
 
 constexpr int kSliceMs = 100;   // how often a wait looks at stop_requested
 constexpr int kWelcomeTimeoutMs = 5000;
-constexpr int kLoadTimeoutMs = 30000;
 
 }  // namespace
 
@@ -50,7 +49,7 @@ bool RemoteBackend::initFromFd(int fd, const SimConfig& cfg) {
   stop_requested_ = cfg.stop_requested;
   alive_ = true;
   Welcome w{};
-  if (!sendMsg(fd_, MsgType::kHello, Hello{0}) || !waitFor(MsgType::kWelcome, kWelcomeTimeoutMs, &buf_)) {
+  if (!sendMsg(fd_, MsgType::kHello, Hello{static_cast<uint32_t>(cfg.robot_index)}) || !waitFor(MsgType::kWelcome, kWelcomeTimeoutMs, &buf_)) {
     if (alive_) fail("gsim_server did not answer");
     return false;
   }
@@ -59,6 +58,7 @@ bool RemoteBackend::initFromFd(int fd, const SimConfig& cfg) {
     return false;
   }
   timestep_ = w.timestep;
+  num_robots_ = static_cast<int>(w.num_robots);
   return true;
 }
 
@@ -118,7 +118,9 @@ bool RemoteBackend::loadRobot(const RobotSpec& spec) {
   Eigen::Map<Eigen::Vector3f>(m.pos0_W) = spec.pos0_W;
   Eigen::Map<Eigen::Vector3f>(m.rpy0) = spec.rpy0;
   Loaded l{};
-  if (!sendMsg(fd_, MsgType::kLoadRobot, m) || !waitFor(MsgType::kLoaded, kLoadTimeoutMs, &buf_)) {
+  // The server answers once every robot of its world has a controller, however long that takes.
+  if (num_robots_ > 1) log(kInfo, "waiting until all " + std::to_string(num_robots_) + " robots have joined gsim_server");
+  if (!sendMsg(fd_, MsgType::kLoadRobot, m) || !waitFor(MsgType::kLoaded, -1, &buf_)) {
     if (alive_) fail("gsim_server closed the connection");
     return false;
   }

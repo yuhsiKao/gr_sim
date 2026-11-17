@@ -2,9 +2,15 @@
 """Run Ghost's mavgui.py (read-only, straight from the SDK) with a working gamepad mapping
 and drop-down menus that work with pygame_gui >= 0.6.10 (see DropDownChoice).
 
-  mavgui_launch.py [--record CSV] MAVGUI_PY [mavgui args...]   used by `scripts/mavgui.sh`
+  mavgui_launch.py [--record CSV] [--select ROBOT ROBOTS FILE] MAVGUI_PY [mavgui args...]
+                                                 used by `scripts/mavgui.sh`
       --record CSV   also write the gripper telemetry (current, position, setpoint, arm/wrist
                      FSM) to CSV with wall time, to line up with the grcontrols_proc log
+      --select ROBOT ROBOTS FILE
+                     one gamepad for several robots, each with its own mavgui: this mavgui is
+                     robot ROBOT of ROBOTS, and FILE (shared by all of them) says which robot
+                     the gamepad drives. D-pad right hands it to the next robot, D-pad left to
+                     the previous one; the others see a gamepad at rest. See RobotSelector.
   mavgui_launch.py --check                       print what mavgui would send from the gamepad
 
 mavgui reads the first joystick assuming the XInput axis order 0 LX, 1 LY, 2 RX, 3 RY,
@@ -25,6 +31,7 @@ import time
 STICK_DEADZONE = 0.1
 XBOX_LINUX_AXES = (0, 1, 3, 4, 2, 5)  # device axis behind each mavgui axis 0..5
 STICK_AXES = range(4)  # mavgui axes 0..3 are sticks, 4 and 5 are triggers
+SWITCH_DEBOUNCE_S = 0.5  # every mavgui sees the same press: only the first one within this time switches
 
 
 def apply_deadzone(value, deadzone):
@@ -42,16 +49,19 @@ def is_xbox(name):
 class RemappedJoystick:
     """A pygame joystick as mavgui sees it: axes in XInput order, sticks with a dead zone."""
 
-    def __init__(self, joystick, axes=None, deadzone=STICK_DEADZONE):
+    def __init__(self, joystick, axes=None, deadzone=STICK_DEADZONE, active=None):
         self._joystick = joystick
         self._axes = axes
         self._deadzone = deadzone
+        self._active = active  # --select: false while the gamepad drives another robot
 
     @property
     def remapped(self):
         return self._axes is not None
 
     def get_axis(self, i):
+        if self._active is not None and not self._active():
+            return 0.0 if i in STICK_AXES else -1.0  # at rest: sticks centred, triggers released
         device_axis = self._axes[i] if self.remapped and i < len(self._axes) else i
         value = self._joystick.get_axis(device_axis)
         return apply_deadzone(value, self._deadzone) if i in STICK_AXES else value
@@ -60,23 +70,119 @@ class RemappedJoystick:
         return getattr(self._joystick, name)
 
 
-def wrap(joystick):
-    return RemappedJoystick(joystick, XBOX_LINUX_AXES if is_xbox(joystick.get_name()) else None)
+def wrap(joystick, active=None):
+    return RemappedJoystick(joystick, XBOX_LINUX_AXES if is_xbox(joystick.get_name()) else None, active=active)
 
 
-def patch_pygame():
+class RobotSelector:
+    """Which robot one gamepad drives, when every robot has its own mavgui (--select).
+
+    All mavgui read the same gamepad, so they share a small file: "<robot> <time of the switch>".
+    The robot named there gets the gamepad; the others see it at rest. Every mavgui gets the
+    press of the D-pad, and each one writes "the next robot" (right) or "the previous robot"
+    (left) unless the file was switched within SWITCH_DEBOUNCE_S, so one press counts once however many mavgui are running (and
+    also works when the mavgui of the robot that has the gamepad is not running).
+    Without a file, or with an unreadable one, robot 0 has the gamepad.
+    """
+
+    def __init__(self, path, robot, robots, clock=time.time):
+        self.path = path
+        self.robot = robot
+        self.robots = robots
+        self._clock = clock
+        self._seen = None
+
+    def _read(self):
+        try:
+            with open(self.path) as f:
+                fields = f.read().split()
+            robot, switched = int(fields[0]), float(fields[1])
+        except (OSError, ValueError, IndexError):
+            return 0, 0.0
+        return (robot, switched) if 0 <= robot < self.robots else (0, 0.0)
+
+    def selected(self):
+        return self._read()[0]
+
+    def active(self):
+        return self.selected() == self.robot
+
+    def switch(self, step=1):
+        """Hands the gamepad to the next (step 1) or the previous (step -1) robot."""
+        robot, switched = self._read()
+        now = self._clock()
+        if 0.0 <= now - switched < SWITCH_DEBOUNCE_S:
+            return
+        tmp = f"{self.path}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            f.write(f"{(robot + step) % self.robots} {now!r}\n")
+        os.replace(tmp, self.path)  # the other mavgui never read a half-written file
+
+    def changed(self):
+        """True the first time, and whenever the selected robot is another one than at the last call."""
+        selected = self.selected()
+        if selected == self._seen:
+            return False
+        self._seen = selected
+        return True
+
+
+def filter_events(events, selector, button_down, hat_motion):
+    """The events mavgui may see: the D-pad (a hat: left / right) switches the robot and is
+    dropped, and the gamepad's buttons (soft e-stop, arm) only reach the mavgui of the robot that
+    has the gamepad."""
+    kept = []
+    for event in events:
+        if event.type == hat_motion:
+            x = event.value[0]
+            if x != 0:
+                selector.switch(1 if x > 0 else -1)
+        elif event.type != button_down or selector.active():
+            kept.append(event)
+    return kept
+
+
+def patch_pygame(selector=None):
     import pygame
 
     original = pygame.joystick.Joystick
 
     def joystick(device_index):
-        joy = wrap(original(device_index))
+        joy = wrap(original(device_index), selector.active if selector else None)
         layout = "Xbox axes remapped" if joy.remapped else "axis order unchanged (not an Xbox controller)"
         print(f"mavgui_launch: {joy.get_name()}: {layout}, stick dead zone {STICK_DEADZONE}", flush=True)
         return joy
 
     pygame.joystick.Joystick = joystick
+    if selector:
+        patch_selection(pygame, selector)
     return pygame
+
+
+def patch_selection(pygame, selector):
+    """mavgui's event loop also switches robots; the window title says whose mavgui this is and
+    whether it has the gamepad."""
+    original_get = pygame.event.get
+    original_caption = pygame.display.set_caption
+
+    def announce():
+        has_it = selector.active()
+        original_caption(f"mavgui robot {selector.robot}" + (" [GAMEPAD]" if has_it else ""))
+        print(f"mavgui_launch: the gamepad drives robot {selector.selected()}"
+              + (" (this one)" if has_it else "; D-pad left / right switches"), flush=True)
+
+    def get(*args, **kwargs):
+        events = filter_events(original_get(*args, **kwargs), selector, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION)
+        if selector.changed():
+            announce()
+        return events
+
+    def set_caption(*args, **kwargs):  # mavgui's own title is replaced by ours
+        selector.changed()
+        announce()
+
+    pygame.event.get = get
+    pygame.display.set_caption = set_caption
 
 
 class DropDownChoice(tuple):
@@ -188,8 +294,10 @@ def check(seconds=15.0):
             pygame.event.pump()
             # + 0.0 turns -0.0 into 0.0 for display
             fwd, lateral, turn, height = (-joy.get_axis(i) + 0.0 for i in (3, 0, 2, 1))
-            print(f"\rforward={fwd:+.2f} sideways={lateral:+.2f} turn={turn:+.2f} height={height:+.2f}  ", end="",
-                  flush=True)
+            pressed = [b for b in range(joy.get_numbuttons()) if joy.get_button(b)]
+            dpad = [joy.get_hat(h) for h in range(joy.get_numhats())]
+            print(f"\rforward={fwd:+.2f} sideways={lateral:+.2f} turn={turn:+.2f} height={height:+.2f} "
+                  f"buttons={pressed} dpad={dpad}      ", end="", flush=True)
             time.sleep(0.1)
     except KeyboardInterrupt:
         pass
@@ -197,20 +305,46 @@ def check(seconds=15.0):
     return 0
 
 
+def parse_options(argv):
+    """Leading --record CSV and --select ROBOT ROBOTS FILE -> ({"record": ..., "select": ...}, the rest)."""
+    opts = {}
+    while argv[:1] in (["--record"], ["--select"]):
+        if argv[0] == "--record":
+            if len(argv) < 2:
+                raise ValueError("--record needs a CSV path")
+            opts["record"], argv = argv[1], argv[2:]
+        else:
+            if len(argv) < 4:
+                raise ValueError("--select needs ROBOT ROBOTS FILE")
+            robot, robots = int(argv[1]), int(argv[2])
+            if not 0 <= robot < robots:
+                raise ValueError(f"--select: robot {robot} is not one of {robots} robots")
+            opts["select"], argv = (robot, robots, argv[3]), argv[4:]
+    return opts, argv
+
+
 def main(argv):
     if argv[:1] == ["--check"]:
         return check()
-    record_path = None
-    if argv[:1] == ["--record"] and len(argv) >= 2:
-        record_path, argv = argv[1], argv[2:]
+    try:
+        opts, argv = parse_options(argv)
+    except ValueError as e:
+        print(f"mavgui_launch: {e}", file=sys.stderr)
+        return 2
     if not argv:
         print(__doc__, file=sys.stderr)
         return 2
     mavgui = os.path.abspath(argv[0])
-    patch_pygame()
+    selector = None
+    if "select" in opts:
+        robot, robots, path = opts["select"]
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        selector = RobotSelector(path, robot, robots)
+    patch_pygame(selector)
     patch_pygame_gui()
     sys.argv = [mavgui] + argv[1:]
     sys.path.insert(0, os.path.dirname(mavgui))  # mavgui imports grpy and mavudptest from its folder
+    record_path = opts.get("record")
     if record_path is None:
         runpy.run_path(mavgui, run_name="__main__")
         return 0

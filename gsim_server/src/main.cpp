@@ -1,24 +1,26 @@
 // gsim_server: the physics for `ghost_sim gsim_backend remote`.
 //
-//   gsim_server gsim_server <socket path> [gsim_headless 1] [gsim_rtf 1.0] [gsim_scene ...]
-//               [gsim_urdf_dir ...] [gsim_toe_friction "a b c"] [gsim_toe_solref "a b"]
+//   gsim_server gsim_server <socket path> [gsim_robots 1] [gsim_headless 1] [gsim_rtf 1.0]
+//               [gsim_scene ...] [gsim_urdf_dir ...] [gsim_toe_friction "a b c"] [gsim_toe_solref "a b"]
 //
-// One MuJoCo world, stepped only when the controller asks: it waits for one controller on the
-// socket, serves it and stops when it leaves (or on Ctrl-C, or when the window is closed).
-// The real-time factor, pause and the window belong here; the controller only follows.
+// One MuJoCo world with gsim_robots robots, stepped only when their controllers ask: it waits on
+// the socket until every robot has a controller, serves them and stops when the last one has left
+// (or on Ctrl-C, or when the window is closed). The real-time factor, pause and the window belong
+// here; the controllers only follow.
 #include <atomic>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <unistd.h>
 
 #include "gsim_core/gsim_args.hpp"
 #include "gsim_core/sim_loop.hpp"
-#include "gsim_mujoco/MujocoBackend.hpp"
-#include "gsim_remote/BackendServer.hpp"
+#include "gsim_mujoco/MujocoWorld.hpp"
+#include "gsim_remote/WorldServer.hpp"
 #include "gsim_remote/protocol.hpp"
 
 namespace {
@@ -48,8 +50,7 @@ int main(int argc, char* argv[]) {
   };
   const gsim::GsimArgs args = gsim::parseGsimArgs(
       lookup, {GSIM_DEFAULT_SCENE, gsim::defaultUrdfDir(std::getenv("CONTROLS_INSTALL_DIR"), GSIM_SDK_DIR), ""}, 0);
-  std::vector<std::string> errors = gsim::validateGsimArgs(args);
-  if (args.server.empty()) errors.push_back("gsim_server: required (the socket path the controller connects to)");
+  const std::vector<std::string> errors = gsim::validateServerArgs(args);
   for (const auto& e : errors) say(gsim::kError, e);
   if (!errors.empty()) return 2;
 
@@ -63,9 +64,9 @@ int main(int argc, char* argv[]) {
   cfg.toe_friction = args.toe_friction;
   cfg.toe_solref = args.toe_solref;
 
-  gsim::MujocoBackend backend;
-  if (!backend.init(cfg)) return fail("failed to initialize MuJoCo");
-  if (const std::string e = gsim::physicsTimestepError(backend.timestep()); !e.empty())
+  gsim::MujocoWorld world;
+  if (!world.init(cfg)) return fail("failed to initialize MuJoCo");
+  if (const std::string e = gsim::physicsTimestepError(world.timestep()); !e.empty())
     return fail(e + " (gsim_scene " + args.scene + ")");
 
   std::string err;
@@ -74,37 +75,23 @@ int main(int argc, char* argv[]) {
 
   std::signal(SIGINT, onStopSignal);
   std::signal(SIGTERM, onStopSignal);
-  say(gsim::kInfo, "headless=" + std::to_string(int(args.headless)) + " rtf=" + std::to_string(args.rtf) +
-                       "; waiting for a controller on " + args.server);
+  say(gsim::kInfo, "headless=" + std::to_string(int(args.headless)) + " rtf=" + std::to_string(args.rtf) + " robots=" +
+                       std::to_string(args.robots) + "; waiting for " +
+                       (args.robots == 1 ? std::string("a controller") : std::to_string(args.robots) + " controllers") +
+                       " on " + args.server);
 
-  // Waits for the controller, serves it, and ends the process when it is done.
+  // Waits for the controllers, serves them, and ends the process when they are done.
   const auto serve = [&] {
-    // A connection that closes without sending anything is not a controller (another gsim_server
-    // probing whether this socket is in use): keep waiting.
-    int fd = -1;
-    while (g_keep_alive.load() && backend.running() && fd < 0) {
-      fd = gsim::remote::acceptClient(listen_fd, 200);
-      int data = 0;
-      while (fd >= 0 && data == 0 && g_keep_alive.load() && backend.running()) data = gsim::remote::waitForData(fd, 200);
-      if (fd >= 0 && data != 1) {
-        gsim::remote::closeFd(fd);
-        fd = -1;
-      }
-    }
-    if (fd >= 0) {
-      say(gsim::kInfo, "controller connected");
-      gsim::remote::BackendServer server(backend, args.urdf_dir, say, args.rtf);
-      const long steps = server.serve(fd, g_keep_alive);
-      say(gsim::kInfo, "stopped at t=" + std::to_string(steps * backend.timestep()) + " s after " + std::to_string(steps) + " steps");
-      gsim::remote::closeFd(fd);
-    }
+    gsim::remote::WorldServer server(world, args.robots, args.urdf_dir, say, args.rtf);
+    const long steps = server.serve(listen_fd, g_keep_alive);
+    say(gsim::kInfo, "stopped at t=" + std::to_string(steps * world.timestep()) + " s after " + std::to_string(steps) + " steps");
     g_keep_alive.store(false);
   };
 
-  if (backend.wantsMainThreadViewer()) {
+  if (world.wantsMainThreadViewer()) {
     // The window must own the main thread; the controller is served on a worker thread.
     std::thread worker(serve);
-    backend.runViewer(g_keep_alive);
+    world.runViewer(g_keep_alive);
     g_keep_alive.store(false);
     worker.join();
   } else {

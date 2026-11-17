@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gsim_core/robot_select.hpp"   // kWristJointNames
+#include "gsim_core/sim_world.hpp"      // kMaxRobots
 
 namespace gsim {
 
@@ -66,7 +67,50 @@ struct BuiltModel {
   std::vector<std::string> warnings;             // MuJoCo warnings during the build (never written to disk)
 };
 
+// One robot; the same as buildMujocoWorld with a single entry.
 BuiltModel buildMujocoModel(const ModelOptions& opt);
+
+// --- several robots in one model ---------------------------------------------------------
+
+struct RobotOptions {
+  std::string urdf_path;                         // absolute
+  int num_sdk_joints = 12;
+  bool fixed_base = false;
+  Eigen::Vector3d base_pos{0.0, 0.0, 0.4};
+  Eigen::Quaterniond base_quat = Eigen::Quaterniond::Identity();
+  std::vector<int> arm_joints;                   // SDK ids of the arm joints (root to tip); empty = no arm
+};
+
+struct WorldOptions {
+  std::string scene_path;                        // absolute
+  std::array<double, 3> toe_friction{3.0, 0.04, 0.0};   // MJCF order: slide, torsional, rolling
+  std::array<double, 2> toe_solref{0.02, 1.0};
+  std::vector<RobotOptions> robots;              // 1..kMaxRobots
+};
+
+struct BuiltRobot {
+  JointMap joints;
+  ArmMap arm;
+  int base_body = -1;
+  int depth_camera = -1;                         // camera id of this robot's kDepthCameraName
+  int free_qposadr = -1, free_dofadr = -1;       // the floating base's free joint; -1 with a fixed base
+};
+
+struct BuiltWorld {
+  mjModel* model = nullptr;                      // caller frees with mj_deleteModel
+  std::vector<BuiltRobot> robots;                // same order as WorldOptions::robots
+  std::string error;
+  std::vector<std::string> warnings;             // MuJoCo warnings during the build (never written to disk)
+};
+
+// Name prefix of robot `robot` in a model of num_robots: none for a single robot (the model is
+// then exactly the single-robot model), "r<i>_" otherwise. It applies to every body, joint, geom,
+// mesh, actuator and camera of that robot.
+std::string robotPrefix(int robot, int num_robots);
+
+// The scene with every robot attached. Robots collide with the world and with each other, never
+// with themselves.
+BuiltWorld buildMujocoWorld(const WorldOptions& opt);
 
 // Empty = model matches expectations; otherwise one message per failed check.
 std::vector<std::string> checkMujocoModel(const mjModel* m, const JointMap& j, const ModelOptions& opt);

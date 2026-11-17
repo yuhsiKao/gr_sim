@@ -25,6 +25,14 @@ struct GsimArgs {
   std::string server;                  // gsim_server: the physics server's socket path (gsim_backend remote, and gsim_server itself)
   // gsim_backend remote: parameters that were given although they belong to the physics server.
   std::vector<std::string> remote_conflicts;
+  // Several robots in gsim_server's world.
+  int robot = 0;                       // gsim_robot (ghost_sim): which robot this controller drives (-1 when unparsable)
+  int robots = 1;                      // gsim_robots (gsim_server): robots in the world (-1 when unparsable)
+  std::array<double, 3> spawn{0.0, 0.0, 0.0};   // gsim_spawn "x y yaw_deg" (ghost_sim): where the robot starts
+  bool spawn_ok = true;                // false if gsim_spawn failed to parse
+  // Parameters that were given at all: each belongs to one of the two programs.
+  bool robots_given = false;
+  std::vector<std::string> controller_only_given;   // of gsim_robot, gsim_spawn, gsim_control_rate, gsim_log
 };
 
 struct GsimDefaults {
@@ -40,8 +48,12 @@ using ArgLookup = std::function<std::string(const std::string& key, const std::s
 // waits for the clock) and selftest is false; giving one of those parameters is an error.
 GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, int test_idx);
 
-// Empty = valid. Each message names the offending gsim_* parameter.
+// Empty = valid. Each message names the offending gsim_* parameter. For ghost_sim.
 std::vector<std::string> validateGsimArgs(const GsimArgs& a);
+
+// The same for gsim_server (which parses with gsim_backend forced to mujoco): its socket path,
+// the number of robots and the physics parameters; parameters of the controller are refused.
+std::vector<std::string> validateServerArgs(const GsimArgs& a);
 
 // "key value" pairs from argv[1], argv[2], ... (the SDK's convention): the value of the first
 // pair whose key matches, otherwise def.

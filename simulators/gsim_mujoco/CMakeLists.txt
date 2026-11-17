@@ -3,6 +3,7 @@
 add_library(gsim_mujoco STATIC
   src/model_builder.cpp
   src/MujocoBackend.cpp
+  src/MujocoWorld.cpp
   src/MujocoViewer.cpp
   src/egl_context.cpp
 )

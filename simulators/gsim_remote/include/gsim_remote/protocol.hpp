@@ -1,5 +1,5 @@
 // Wire protocol between a controller process (RemoteBackend) and the physics server
-// (BackendServer), over a unix domain stream socket. Both ends run on the same machine and
+// (WorldServer), over a unix domain stream socket. Both ends run on the same machine and
 // are built from the same sources, so messages are packed structs in host byte order; the
 // version number catches a mix of old and new binaries.
 //
@@ -26,7 +26,7 @@ struct Header {
   uint32_t size;   // payload bytes after the header
 };
 struct Hello {
-  uint32_t robot;   // always 0 in version 1
+  uint32_t robot;   // which robot of the server's world this controller drives (0-based)
 };
 struct Welcome {
   double timestep;

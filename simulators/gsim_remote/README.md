@@ -2,9 +2,9 @@
 
 Remote backend (`gsim_backend remote`). The physics does not run inside `ghost_sim` but in a
 second process, [`gsim_server`](../../gsim_server/src/main.cpp), reached over a unix domain
-socket. It is the first step towards several robots in one world: every controller process needs
-its own network namespace (the SDK's MBLink port is fixed), so the world they share has to live
-outside them.
+socket. This is what puts several robots into one world: every controller process needs its own
+network namespace (the SDK's MBLink port is fixed), so the world they share has to live outside
+them.
 
 The package holds both ends and the protocol between them. It depends only on `gsim_core`.
 
@@ -12,9 +12,9 @@ The package holds both ends and the protocol between them. It depends only on `g
 | --- | --- |
 | `protocol.hpp` | Message layout and the socket helpers. |
 | `RemoteBackend` | `ISimBackend` for `ghost_sim`: one round trip to the server per physics step. |
-| `BackendServer` | Serves any `ISimBackend` to one controller; real-time pacing and pause. |
+| `WorldServer` | Serves an `ISimWorld` to its controllers, one robot each; real-time pacing and pause. |
 
-## Run
+## Run: One Robot
 
 ```bash
 # terminal 1: the physics (MuJoCo), with its window
@@ -25,26 +25,57 @@ scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
 scripts/mavgui.sh
 ```
 
-Start the server first. It waits for one controller and stops when that controller leaves, so
-both are started again for the next run. Ctrl-C in either terminal, or closing the window, stops
-both.
+Start the server first. It stops when the controller leaves, so both are started again for the
+next run. Ctrl-C in either terminal, or closing the window, stops both.
+
+## Run: Several Robots
+
+Each controller runs in its own container, next to one container for the physics
+([`docker/compose.multi.yaml`](../../docker/compose.multi.yaml)). On the host:
+
+```bash
+scripts/multi.sh up            # once: gr-physics, gr-robot-0, gr-robot-1
+scripts/multi.sh server        # terminal 1: the world and its window, waits for 2 robots
+scripts/multi.sh robot 0       # terminal 2
+scripts/multi.sh robot 1       # terminal 3; the simulation starts when all robots have joined
+scripts/multi.sh mavgui 0      # terminal 4: commands robot 0
+scripts/multi.sh mavgui 1      # terminal 5: commands robot 1
+scripts/multi.sh down          # when done
+```
+
+- **Each robot is its own controller.** It has its own MBLink (reached from inside its container,
+  which is what `multi.sh mavgui <i>` does) and its own DDS domain, 124 + index.
+- **The robots share the world.** They collide with each other, and the window, the real-time
+  factor and pause (space bar) apply to all of them.
+- **One gamepad drives one robot at a time.** Start every mavgui with `--joystick`
+  (`scripts/multi.sh mavgui 0 --joystick`, `... mavgui 1 --joystick`): the gamepad starts on robot
+  0; D-pad right hands it to the next robot, D-pad left to the previous one. The window title shows `[GAMEPAD]` on the robot that has
+  it; the others stand still, and the gamepad's buttons (soft e-stop, arm) only reach that robot.
+  Without `--joystick` a mavgui takes the keyboard while its window has the focus.
+- **Robot `i` starts 1.5 m beside robot `i - 1`.** `gsim_spawn "x y yaw_deg"` after
+  `multi.sh robot <i>` puts it elsewhere; robots must start at least 1 m apart.
+- **A controller that stops leaves its robot in the world.** The robot gets no torque any more and
+  collapses where it is; the others carry on. The server stops when the last controller has left.
 
 ## Parameters
 
 `gsim_server` takes the parameters of the physics; `ghost_sim` keeps the ones of the controller.
-Giving `ghost_sim` a parameter that belongs to the server is an error.
+Giving one program a parameter that belongs to the other is an error.
 
 | Parameter | `gsim_server` | `ghost_sim` (remote) |
 | --- | --- | --- |
 | `gsim_server <path>` | required: the socket to listen on | required: the socket to connect to |
+| `gsim_robots <n>` | robots in the world, 1 to 8 (default `1`) | error |
+| `gsim_robot <i>` | error | which robot this controller drives (default `0`) |
+| `gsim_spawn "x y yaw_deg"` | error | where the robot starts (default `"0 0 0"`) |
 | `gsim_headless` | `1` = no window (default `0`) | always headless |
 | `gsim_rtf` | real-time factor (default `1.0`, `0` = as fast as possible) | error |
 | `gsim_scene`, `gsim_toe_friction`, `gsim_toe_solref` | as for `gsim_backend mujoco` | error |
 | `gsim_urdf_dir` | where the URDF is loaded from | where the robot type is looked up |
-| `gsim_control_rate`, `gsim_log` | not used | as usual |
+| `gsim_control_rate`, `gsim_log` | error | as usual; may differ between robots |
 
-Both processes must be the same build and see the same SDK: the controller sends the URDF's
-file name and the server loads that file from its own `gsim_urdf_dir`.
+All processes must be the same build and see the same SDK: a controller sends the URDF's file
+name and the server loads that file from its own `gsim_urdf_dir`.
 
 ## Protocol
 
@@ -53,30 +84,37 @@ both ends run on one machine. A different version on the other end is refused.
 
 | Message | Direction | Contents |
 | --- | --- | --- |
-| `Hello` / `Welcome` | controller → server / back | Handshake; the server's physics step. |
-| `LoadRobot` / `Loaded` | controller → server / back | URDF file name, joint count, fixed base, start pose; success or the reason. |
+| `Hello` / `Welcome` | controller → server / back | The robot's index; the server's physics step and number of robots. |
+| `LoadRobot` / `Loaded` | controller → server / back | URDF file name, joint count, fixed base, start pose; success or the reason. Answered once every robot has joined and the world is built. |
 | `ResetJoint` | controller → server | Initial joint angle. |
 | `Step` / `State` | controller → server / back | Once per physics step: joint torques and external force; base pose, velocities and joint state. |
 | `Bye` | controller → server | The controller is leaving. |
 | `Error` | server → controller | A message the server could not accept. |
 
-The world steps only when the controller asks, so the controller and the physics share one clock
-and the result is identical to `gsim_backend mujoco`, bit for bit. One round trip costs about
-5 µs.
+The world steps once every connected controller has asked for the step, so the controllers and
+the physics share one clock. With one robot the result is identical to `gsim_backend mujoco`, bit
+for bit. One round trip costs about 5 µs.
 
 ## Behaviour
 
 | Situation | What happens |
 | --- | --- |
 | No server at the socket | `ghost_sim` exits with code 2 and names the path. |
-| The server stops (Ctrl-C, window closed) | `ghost_sim` stops by itself and exits normally. |
-| The controller stops or crashes | The server stops. |
-| The server is paused (space bar in its window) | The controller waits in its step; Ctrl-C still stops it. |
+| Not every robot has a controller yet | The controllers that joined wait; Ctrl-C ends a waiting controller and frees its robot for another one. |
+| A robot index the server does not have, or one that is taken | That `ghost_sim` exits with code 2 and the reason; the others are not disturbed. |
+| Two robots start less than 1 m apart | The server refuses to build the world and stops; every controller reports the reason. |
+| A controller connects after the simulation has started | Refused; the running robots are not disturbed. |
+| The server stops (Ctrl-C, window closed) | Every `ghost_sim` stops by itself and exits normally. |
+| A controller stops or crashes while the simulation runs | Its robot stays in the world without torque; the server stops when the last controller has left. |
+| A controller hangs without disconnecting | The world waits for it, and the server names the robot every 5 s. |
+| The server is paused (space bar in its window) | Every controller waits in its step; Ctrl-C still stops it. |
 | Another user on the machine tries to connect | Refused: the socket file is readable and writable by its owner only. |
 | A socket file left by a crashed server | Replaced by the next server. A path another server is using is refused. |
 
 ## Limits
 
-- One robot per server.
 - Legs only: no arm (`arm 1` is refused) and no depth camera, so no terrain perception.
 - The server's physics is MuJoCo.
+- The number of robots is fixed when the server starts; a robot cannot join a running simulation.
+- Robots in different containers only see their own MBLink and DDS domain: tools for robot `i`
+  run in `gr-robot-<i>` (or in the same DDS domain on the same Docker network).

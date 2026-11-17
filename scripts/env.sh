@@ -29,8 +29,9 @@ esac
 export GSIM_PY="${GSIM_PY:-$HOME/miniconda3/envs/ghost_mavgui/bin/python}"
 
 # Runtime files the Ghost controller writes (user_params_config.yaml next to the
-# planner_config file, .grlocaldata in local_dir) must land here, never in the SDK.
-export GSIM_RUN_DIR="$GSIM_PROJ/run"
+# planner_config file, .grlocaldata in local_dir) must land here, never in the SDK. A controller
+# that shares the repository with another one (docker/compose.multi.yaml) gets its own folder.
+export GSIM_RUN_DIR="${GSIM_RUN_DIR:-$GSIM_PROJ/run}"
 
 # Copy the SDK's planner config into $GSIM_RUN_DIR/config (once) so that
 # `planner_config $GSIM_RUN_DIR/config/default_settings.yaml` keeps writes out of the SDK.
