@@ -1,0 +1,11 @@
+# Service for joint calibration and zeroing operations.
+# Robot must be in E-stop mode. Joint indices 0-14 are body, 15-18 are wrist.
+
+# Request
+ghost_manager_interfaces/JointId joint  # Joint index
+
+---
+
+# Response
+bool success                            # True if command was dispatched successfully
+string message                          # Human-readable result or error description

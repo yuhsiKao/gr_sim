@@ -1,0 +1,10 @@
+# Set LED color on all legs.
+# Use r/g/b for custom color, or preset for built-in modes (2=red, 3=white, 4=blue, 5=police).
+uint8 r
+uint8 g
+uint8 b
+uint8 preset
+---
+bool success
+string message
+bool overridden

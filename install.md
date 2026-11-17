@@ -10,7 +10,8 @@ simulator backends (MuJoCo, Bullet, Gazebo). Nothing but Docker is installed on 
 - NVIDIA GPU with its driver, for the windows and the offscreen depth camera.
 - Docker Engine with the Docker Compose plugin (Compose ≥ 2.30).
 - NVIDIA Container Toolkit.
-- GhostSDK 1.0.1 — **not included**; Ghost Robotics provides it to Vision 60 customers.
+- Access to the private `GhostSDK_1.0.1` repository on GitHub: GhostSDK 1.0.1 is a submodule of
+  this repository.
 
 ## 1. Prepare the Host
 
@@ -35,11 +36,6 @@ echo $XDG_SESSION_TYPE                            # x11
 > The GPU is used for rendering only: the simulator windows, RViz2 and Gazebo's depth camera.
 > Physics and the controller run on the CPU.
 
-Unpack GhostSDK 1.0.1 anywhere on the host. The directory `gr_sim` needs is `GhostSDK_bullet_linux`.
-
-> The SDK is treated as read-only: the container mounts it read-only and nothing in `gr_sim`
-> writes into it. Never build, install or run anything inside it.
-
 ## 2. Create the Workspace
 
 Create a folder of its own for `gr_sim` on the host:
@@ -58,35 +54,36 @@ The Docker Compose file mounts this folder as the container's home:
 so it must not be your home folder or a folder shared with other projects. The container runs as
 root: files it writes there are owned by root on the host.
 
-## 3. Download `gr_sim` and Point It at the SDK
+## 3. Download `gr_sim`
 
-Clone this repository into the workspace:
+Clone this repository into the workspace, with its submodule (the Ghost SDK):
 
 ```bash
-git clone https://github.com/yuhsiKao/gr_sim.git
+git clone --recurse-submodules https://github.com/yuhsiKao/gr_sim.git
 cd gr_sim                                         # every host command below starts from here
 ```
 
-Create the per-machine settings file:
+Check that the SDK is there (after a clone without `--recurse-submodules`, run
+`git submodule update --init` first):
 
 ```bash
-cp docker/.env.example docker/.env
+ls third_party/GhostSDK_1.0.1/GhostSDK_bullet_linux/lib/libgrcontrols.a
 ```
 
-Edit `docker/.env` and set `CONTROLS_INSTALL_DIR` to your `GhostSDK_bullet_linux` directory, then
-check the path:
-
-```bash
-ls "$(sed -n 's/^CONTROLS_INSTALL_DIR=//p' docker/.env)/lib/libgrcontrols.a"
-```
+> The SDK is treated as read-only: the container mounts it read-only and nothing in `gr_sim`
+> writes into it. Never build, install or run anything inside it.
 
 Your workspace should now look like:
 
 ```text
-~/docker_ws/gr_sim/        # /root in the container
-└── gr_sim/                # this repository; ~/gr_sim in the container
-    └── docker/.env        # your SDK path
+~/docker_ws/gr_sim/                    # /root in the container
+└── gr_sim/                            # this repository; ~/gr_sim in the container
+    ├── third_party/GhostSDK_1.0.1/    # the Ghost SDK (submodule)
+    └── ros2/ghost_interfaces/         # the controller's ROS 2 interface packages
 ```
+
+To use another copy of the SDK, copy `docker/.env.example` to `docker/.env` and set
+`CONTROLS_INSTALL_DIR` to its `GhostSDK_bullet_linux` directory.
 
 ## 4. Build and Start the Docker Environment
 
@@ -158,8 +155,8 @@ work without it.
 > here. Set modes over topics instead: see
 > [Setting Modes](#setting-modes-in-the-simulator) below.
 
-The SDK's controller talks DDS. Its API uses three interface packages that neither the SDK nor
-this repository ships; they are installed on the robot's onboard computer:
+The SDK's controller talks DDS. Its API uses three interface packages that are installed on the
+robot's onboard computer (`~/current_ros2/share`); their definitions are in `ros2/ghost_interfaces`:
 
 | Package | Depends on |
 | --- | --- |
@@ -167,59 +164,13 @@ this repository ships; they are installed on the robot's onboard computer:
 | `robot_control_msgs` | `builtin_interfaces` `std_msgs` `geometry_msgs` `sensor_msgs` `action_msgs` |
 | `draper_msgs` | `builtin_interfaces` `std_msgs` `geometry_msgs` `sensor_msgs` |
 
-Copy the definitions from the robot, on the host (`ghost@<robot-ip>` is the robot's onboard
-computer). Only `package.xml` and the `.msg` / `.srv` / `.action` files are needed:
+Build the three packages inside the container, in a workspace next to the repository (expect
+`Summary: 3 packages finished`):
 
 ```bash
-mkdir -p ~/docker_ws/gr_sim/gr_ros2_ws/src/ghost_interfaces && cd ~/docker_ws/gr_sim/gr_ros2_ws/src/ghost_interfaces
-ssh ghost@<robot-ip> 'cd ~/current_ros2/share && \
-  find ghost_manager_interfaces robot_control_msgs draper_msgs \
-    \( -name package.xml -o -name "*.msg" -o -name "*.srv" -o -name "*.action" \) \
-    ! -name "*_Request.msg" ! -name "*_Response.msg" ! -name "*_Event.msg" | tar czf - -T -' | tar xzf -
-```
-
-> The robot's folder also holds `*_Request.msg` / `*_Response.msg` / `*_Event.msg` files. They are
-> build outputs generated from the `.srv` files, so the command above skips them: `colcon build`
-> generates them again.
-
-Add a `CMakeLists.txt` to each of the three package folders, with the package's name and its
-dependencies from the table above. For `ghost_manager_interfaces`:
-
-```cmake
-cmake_minimum_required(VERSION 3.8)
-project(ghost_manager_interfaces)
-
-find_package(ament_cmake REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-find_package(std_msgs REQUIRED)                    # one line per dependency
-
-file(GLOB interface_files RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS
-     msg/*.msg srv/*.srv action/*.action)
-rosidl_generate_interfaces(${PROJECT_NAME} ${interface_files}
-  DEPENDENCIES std_msgs)                           # the same dependencies
-
-ament_export_dependencies(rosidl_default_runtime)
-ament_package()
-```
-
-Your workspace should now look like:
-
-```text
-~/docker_ws/gr_sim/
-├── gr_sim/
-└── gr_ros2_ws/src/
-    └── ghost_interfaces/                 # a plain folder, not a package
-        ├── draper_msgs/                  # CMakeLists.txt, package.xml, msg/
-        ├── ghost_manager_interfaces/     # CMakeLists.txt, package.xml, msg/, srv/
-        └── robot_control_msgs/           # CMakeLists.txt, package.xml, msg/, srv/
-```
-
-Build the three packages inside the container (expect `Summary: 3 packages finished`):
-
-```bash
-cd /root/gr_ros2_ws
+mkdir -p /root/gr_ros2_ws && cd /root/gr_ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build
+colcon build --base-paths /root/gr_sim/ros2
 ```
 
 Add the ROS 2 environment setup to `/root/.bashrc` (once: the home folder stays on the host):
@@ -287,8 +238,8 @@ conda activate ghost_mavgui
 pip install -r docker/requirements-mavgui.txt
 ```
 
-then run steps 5-6 on the host. `scripts/env.sh` takes the SDK path from `docker/.env` (or from an
-exported `CONTROLS_INSTALL_DIR`). The scripts find the Python env through `$GSIM_PY` (default
+then run steps 5-6 on the host. `scripts/env.sh` uses the SDK in `third_party/` unless
+`docker/.env` or an exported `CONTROLS_INSTALL_DIR` names another one. The scripts find the Python env through `$GSIM_PY` (default
 `~/miniconda3/envs/ghost_mavgui/bin/python`), so it never needs activating; any Python 3.10 env
 with the same requirements works if `GSIM_PY` points at its interpreter. The host build goes to
 `build/`, the container's to `build-docker/`, so both can exist side by side.

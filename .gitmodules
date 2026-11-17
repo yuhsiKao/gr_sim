@@ -1,0 +1,3 @@
+[submodule "third_party/GhostSDK_1.0.1"]
+	path = third_party/GhostSDK_1.0.1
+	url = ../GhostSDK_1.0.1.git

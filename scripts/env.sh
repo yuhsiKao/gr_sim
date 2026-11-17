@@ -6,13 +6,15 @@ GSIM_PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export GSIM_PROJ
 
 # The Ghost SDK is treated as read-only; nothing in this project writes into it. Its path comes
-# from the environment (the container sets it) or, on a host, from the per-machine docker/.env.
+# from the environment (the container sets it), on a host from the per-machine docker/.env, and
+# otherwise it is the third_party/GhostSDK_1.0.1 submodule.
 if [ -z "${CONTROLS_INSTALL_DIR:-}" ] && [ -f "$GSIM_PROJ/docker/.env" ]; then
   CONTROLS_INSTALL_DIR="$(sed -n 's/^CONTROLS_INSTALL_DIR=//p' "$GSIM_PROJ/docker/.env" | tail -n 1 | tr -d "\"'")"
 fi
-if [ -z "${CONTROLS_INSTALL_DIR:-}" ]; then
-  echo "scripts/env.sh: CONTROLS_INSTALL_DIR is not set. Set it to the SDK's GhostSDK_bullet_linux" >&2
-  echo "  directory in docker/.env (cp docker/.env.example docker/.env) or export it." >&2
+CONTROLS_INSTALL_DIR="${CONTROLS_INSTALL_DIR:-$GSIM_PROJ/third_party/GhostSDK_1.0.1/GhostSDK_bullet_linux}"
+if [ ! -f "$CONTROLS_INSTALL_DIR/lib/libgrcontrols.a" ]; then
+  echo "scripts/env.sh: no Ghost SDK at $CONTROLS_INSTALL_DIR." >&2
+  echo "  Fetch the submodule (git submodule update --init) or set CONTROLS_INSTALL_DIR in docker/.env." >&2
   return 1
 fi
 export CONTROLS_INSTALL_DIR

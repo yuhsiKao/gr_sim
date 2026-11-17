@@ -12,7 +12,7 @@ The container runs as root, so files it writes there are owned by root on the ho
 ```text
 ~/docker_ws/gr_sim/        # host; /root in the container
 ├── gr_sim/                # this repository
-├── gr_ros2_ws/            # colcon workspace: Ghost's ROS 2 interface packages (install.md, step 7)
+├── gr_ros2_ws/            # colcon workspace: the build of ros2/ghost_interfaces (install.md, step 7)
 └── .bashrc, logs/, ...    # the container's home files
 ```
 
@@ -31,18 +31,19 @@ The container runs as root, so files it writes there are owned by root on the ho
 | --- | --- |
 | `/root` | The folder that holds this repository (`../..` from `docker/`). |
 | `~/gr_sim/build` | `build-docker/` (kept apart from a host `build/`, which links against the host's libraries). |
-| `/ws/GhostSDK_bullet_linux` | The SDK, read-only. |
+| `/ws/GhostSDK_bullet_linux` | The SDK (`third_party/GhostSDK_1.0.1/GhostSDK_bullet_linux`), read-only. |
 
 The compose setup also gives the container host networking (MBLink and DDS reach tools on the
 host), the NVIDIA GPU (windows and the offscreen depth camera), X11 and `/dev/input` (gamepads).
 
 ## Configure
 
-`docker/.env` (copied from `docker/.env.example`, not committed) holds the per-machine settings:
+`docker/.env` (optional; copied from `docker/.env.example`, not committed) holds the per-machine
+settings:
 
 | Variable | Meaning |
 | --- | --- |
-| `CONTROLS_INSTALL_DIR` | The SDK's `GhostSDK_bullet_linux` directory on the host. |
+| `CONTROLS_INSTALL_DIR` | Another `GhostSDK_bullet_linux` directory on the host, instead of the submodule. |
 
 ## Build and Run
 

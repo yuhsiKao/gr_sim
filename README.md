@@ -4,7 +4,8 @@
 simulators. The pipeline is **Ghost SDK controller → `ghost_sim` (bsp hooks + simulation loop) →
 `ISimBackend` → MuJoCo / Bullet / Gazebo Harmonic**.
 
-> **The Ghost SDK is read-only.** Never build, install or run anything inside it, and run its
+> **The Ghost SDK is read-only.** It is the `third_party/GhostSDK_1.0.1` submodule (a private
+> repository). Never build, install or run anything inside it, and run its
 > Python with `python -B`. `scripts/check_sdk_untouched.sh` checks it (`--init` records the
 > baseline).
 
@@ -39,6 +40,8 @@ gr_sim/
 ├── ghost_sim/      # the executable: the SDK's bsp hooks + the simulator factory
 ├── scripts/        # run_sim.sh, mavgui.sh, rviz.sh, m0_official_sim.sh, check_sdk_untouched.sh
 ├── examples/       # scripts that command the robot over MBLink
+├── ros2/           # ghost_interfaces: the controller's ROS 2 interface packages
+├── third_party/    # GhostSDK_1.0.1: the Ghost SDK (submodule, read-only)
 ├── cmake/          # find modules: Ghost SDK, MuJoCo, simulate, Gazebo
 ├── docker/         # Dockerfile + compose.yaml (container gr-sim: the default install)
 └── install.md      # installation from scratch
@@ -46,9 +49,9 @@ gr_sim/
 
 ## Getting Started
 
-1. **Install** — set up the Docker workspace, point it at the Ghost SDK, build the `gr-sim` image
-   and build `gr_sim` inside it: see [`install.md`](install.md). The same guide covers the
-   optional ROS 2 interface packages and building without Docker.
+1. **Install** — set up the Docker workspace, clone this repository with the Ghost SDK submodule,
+   build the `gr-sim` image and build `gr_sim` inside it: see [`install.md`](install.md). The same
+   guide covers the optional ROS 2 interface packages and building without Docker.
 
 ## Quick Start
 

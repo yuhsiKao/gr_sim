@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>draper_msgs</name>
+  <version>2.1.2</version>
+  <description>Draper Custom Messages</description>
+
+  <maintainer email="tsteiner@draper.com">Ted Steiner</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake_ros</buildtool_depend>
+  <buildtool_depend>rosidl_default_generator</buildtool_depend>
+
+  <depend>rosidl_default_runtime</depend>
+  <depend>rosidl_default_generators</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
