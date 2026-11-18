@@ -30,16 +30,24 @@ inline constexpr const char* kDepthCameraName = "depth_underside";
 // Contact dimension of the toes: 4 = sliding + torsional friction (ModelOptions::toe_friction[1]).
 inline constexpr int kToeCondim = 4;
 
-struct ModelOptions {
+// One robot of a model.
+struct RobotOptions {
   std::string urdf_path;                         // absolute
-  std::string scene_path;                        // absolute
   int num_sdk_joints = 12;
   bool fixed_base = false;
   Eigen::Vector3d base_pos{0.0, 0.0, 0.4};
   Eigen::Quaterniond base_quat = Eigen::Quaterniond::Identity();
+  std::vector<int> arm_joints;                   // SDK ids of the arm joints (root to tip); empty = no arm
+};
+
+// The robot a backend was asked to load, as model options.
+RobotOptions robotOptions(const RobotSpec& spec);
+
+// A model with one robot: the robot plus the world it stands in.
+struct ModelOptions : RobotOptions {
+  std::string scene_path;                        // absolute
   std::array<double, 3> toe_friction{3.0, 0.04, 0.0};   // MJCF order: slide, torsional, rolling
   std::array<double, 2> toe_solref{0.02, 1.0};
-  std::vector<int> arm_joints;                   // SDK ids of the arm joints (root to tip); empty = no arm
 };
 
 struct JointMap {                                // index = SDK joint id; -1 = missing
@@ -51,18 +59,23 @@ struct JointMap {                                // index = SDK joint id; -1 = m
 //   ws_<wrist>:  velocity actuator per wrist joint, position mode 4 (Bullet-style servo)
 //   wt_<wrist>:  torque actuator per wrist joint, current mode 2
 struct ArmMap {
-  std::vector<int> joints, lock_actuator;        // same order as ModelOptions::arm_joints
+  std::vector<int> joints, lock_actuator;        // same order as RobotOptions::arm_joints
   std::array<int, 5> wrist_qposadr{-1, -1, -1, -1, -1}, wrist_dofadr{-1, -1, -1, -1, -1};
   std::array<int, 5> wrist_servo{-1, -1, -1, -1, -1}, wrist_torque{-1, -1, -1, -1, -1};
   bool has_wrist = false;
 };
 
-struct BuiltModel {
-  mjModel* model = nullptr;                      // caller frees with mj_deleteModel
+// Where one robot's joints, actuators and camera are in the compiled model.
+struct BuiltRobot {
   JointMap joints;
   ArmMap arm;
   int base_body = -1;
-  int depth_camera = -1;                         // camera id of kDepthCameraName
+  int depth_camera = -1;                         // camera id of this robot's kDepthCameraName
+  int free_qposadr = -1, free_dofadr = -1;       // the floating base's free joint; -1 with a fixed base
+};
+
+struct BuiltModel : BuiltRobot {
+  mjModel* model = nullptr;                      // caller frees with mj_deleteModel
   std::string error;
   std::vector<std::string> warnings;             // MuJoCo warnings during the build (never written to disk)
 };
@@ -72,28 +85,11 @@ BuiltModel buildMujocoModel(const ModelOptions& opt);
 
 // --- several robots in one model ---------------------------------------------------------
 
-struct RobotOptions {
-  std::string urdf_path;                         // absolute
-  int num_sdk_joints = 12;
-  bool fixed_base = false;
-  Eigen::Vector3d base_pos{0.0, 0.0, 0.4};
-  Eigen::Quaterniond base_quat = Eigen::Quaterniond::Identity();
-  std::vector<int> arm_joints;                   // SDK ids of the arm joints (root to tip); empty = no arm
-};
-
 struct WorldOptions {
   std::string scene_path;                        // absolute
   std::array<double, 3> toe_friction{3.0, 0.04, 0.0};   // MJCF order: slide, torsional, rolling
   std::array<double, 2> toe_solref{0.02, 1.0};
   std::vector<RobotOptions> robots;              // 1..kMaxRobots
-};
-
-struct BuiltRobot {
-  JointMap joints;
-  ArmMap arm;
-  int base_body = -1;
-  int depth_camera = -1;                         // camera id of this robot's kDepthCameraName
-  int free_qposadr = -1, free_dofadr = -1;       // the floating base's free joint; -1 with a fixed base
 };
 
 struct BuiltWorld {

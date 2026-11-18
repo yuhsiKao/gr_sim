@@ -115,16 +115,7 @@ bool MujocoWorld::build() {
   opt.scene_path = cfg_.scene_path;
   opt.toe_friction = cfg_.toe_friction;
   opt.toe_solref = cfg_.toe_solref;
-  for (const Robot& r : robots_) {
-    RobotOptions o;
-    o.urdf_path = r.spec.urdf_path;
-    o.num_sdk_joints = r.spec.num_sdk_joints;
-    o.fixed_base = r.spec.fixed_base;
-    o.base_pos = r.spec.pos0_W.cast<double>();
-    o.base_quat = quatFromRpy(r.spec.rpy0).cast<double>();
-    o.arm_joints = r.spec.arm_joints;
-    opt.robots.push_back(o);
-  }
+  for (const Robot& r : robots_) opt.robots.push_back(robotOptions(r.spec));
   BuiltWorld built = buildMujocoWorld(opt);
   for (const auto& w : built.warnings) log(kInfo, "MuJoCo: " + w);
   if (!built.model) {
@@ -305,9 +296,9 @@ void MujocoWorld::setWristCommand(int robot_index, const WristCommand& cmd) {
 // A tracker's gain follows the joint's inertia (see kTrackerGain); a switched-off tracker gets
 // gain 0 (not only a zero force range), so no implicit damping remains.
 void MujocoWorld::applyArm(Robot& r) {
-  const ArmMap& arm_ = r.map.arm;
-  const JointMap& joints_ = r.map.joints;
-  if (arm_.joints.empty()) return;
+  const ArmMap& arm = r.map.arm;
+  const JointMap& joints = r.map.joints;
+  if (arm.joints.empty()) return;
   const double dt = m_->opt.timestep;
   auto setTracker = [this, dt](int a, int dof, bool on, double target_vel, double force_limit) {
     on = on && force_limit > 0.0;   // Bullet's motor with max force 0 applies nothing
@@ -318,26 +309,26 @@ void MujocoWorld::applyArm(Robot& r) {
     m_->actuator_forcerange[2 * a + 1] = force_limit;
     d_->ctrl[a] = on ? target_vel : 0.0;
   };
-  for (size_t i = 0; i < arm_.joints.size(); ++i) {
-    const int id = arm_.joints[i];
-    const int a = arm_.lock_actuator[i];
-    const float q = static_cast<float>(d_->qpos[joints_.qposadr[id]]);
-    const float v = static_cast<float>(d_->qvel[joints_.dofadr[id]]);
-    setTracker(a, joints_.dofadr[id], r.arm_locked, bulletMotorTargetVelocity(q, v, 0.f, 0.f, kArmLockGains, dt),
+  for (size_t i = 0; i < arm.joints.size(); ++i) {
+    const int id = arm.joints[i];
+    const int a = arm.lock_actuator[i];
+    const float q = static_cast<float>(d_->qpos[joints.qposadr[id]]);
+    const float v = static_cast<float>(d_->qvel[joints.dofadr[id]]);
+    setTracker(a, joints.dofadr[id], r.arm_locked, bulletMotorTargetVelocity(q, v, 0.f, 0.f, kArmLockGains, dt),
                kArmLockMaxForce);
-    if (r.arm_locked) d_->ctrl[joints_.actuator[id]] = 0.0;   // SDK torque not applied
+    if (r.arm_locked) d_->ctrl[joints.actuator[id]] = 0.0;   // SDK torque not applied
   }
   const WristCommand& c = r.wrist_cmd;
   const bool servo = c.mode == WristMode::kPositionOverCurrent;
   const bool current = c.mode == WristMode::kCurrent;
   for (int i = 0; i < 5; ++i) {
     const int k = i < 4 ? i : 3;   // the second jaw (jwrist_g2) follows jwrist_g
-    const float q = static_cast<float>(d_->qpos[arm_.wrist_qposadr[i]]);
-    const float v = static_cast<float>(d_->qvel[arm_.wrist_dofadr[i]]);
-    setTracker(arm_.wrist_servo[i], arm_.wrist_dofadr[i], servo,
+    const float q = static_cast<float>(d_->qpos[arm.wrist_qposadr[i]]);
+    const float v = static_cast<float>(d_->qvel[arm.wrist_dofadr[i]]);
+    setTracker(arm.wrist_servo[i], arm.wrist_dofadr[i], servo,
                bulletMotorTargetVelocity(q, v, c.pos_des[k], c.vel_des[k], kWristServoGains, dt),
                std::max(c.max_current[k], 0.f));
-    d_->ctrl[arm_.wrist_torque[i]] = current ? c.max_current[k] : 0.0;
+    d_->ctrl[arm.wrist_torque[i]] = current ? c.max_current[k] : 0.0;
   }
   r.applied_wrist = c;
 }
@@ -345,15 +336,15 @@ void MujocoWorld::applyArm(Robot& r) {
 void MujocoWorld::readWrist(int robot_index, WristState& w) {
   const Robot* r = robot(robot_index);
   if (!r || r->map.arm.joints.empty()) return;
-  const ArmMap& arm_ = r->map.arm;
+  const ArmMap& arm = r->map.arm;
   ensureForward();
   for (int i = 0; i < 4; ++i) {
-    w.q[i] = static_cast<float>(d_->qpos[arm_.wrist_qposadr[i]]);
-    w.dq[i] = static_cast<float>(d_->qvel[arm_.wrist_dofadr[i]]);
+    w.q[i] = static_cast<float>(d_->qpos[arm.wrist_qposadr[i]]);
+    w.dq[i] = static_cast<float>(d_->qvel[arm.wrist_dofadr[i]]);
   }
   switch (r->applied_wrist.mode) {
     case WristMode::kPositionOverCurrent:
-      for (int i = 0; i < 4; ++i) w.current[i] = static_cast<float>(d_->actuator_force[arm_.wrist_servo[i]]);
+      for (int i = 0; i < 4; ++i) w.current[i] = static_cast<float>(d_->actuator_force[arm.wrist_servo[i]]);
       break;
     case WristMode::kCurrent:
       w.current = r->applied_wrist.max_current;
@@ -367,9 +358,12 @@ void MujocoWorld::readWrist(int robot_index, WristState& w) {
 // kStepsPerFrame-th. Calls only happen while the SDK has its cameras on, so the counter pauses with them.
 bool MujocoWorld::updateDepthCamera(int robot_index, PointCloud& cloud_B) {
   Robot* r = robot(robot_index);
+  return r && depthFrameDue(r->depth_calls) && renderDepthCamera(robot_index, cloud_B);
+}
+
+bool MujocoWorld::renderDepthCamera(int robot_index, PointCloud& cloud_B) {
+  Robot* r = robot(robot_index);
   if (!r || depth_failed_ || r->map.depth_camera < 0) return false;
-  r->depth_calls = (r->depth_calls + 1) % FactoryDepthCamera::kStepsPerFrame;
-  if (r->depth_calls != 0) return false;
   if (!egl_ && !startDepthRenderer()) return false;
   if (!egl_->makeCurrent()) {
     depth_failed_ = true;

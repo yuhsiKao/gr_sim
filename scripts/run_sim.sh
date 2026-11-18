@@ -12,11 +12,7 @@ if [ ! -f "$CONTROLS_INSTALL_DIR/lib/libgrcontrols.a" ]; then
   echo "run_sim.sh: CONTROLS_INSTALL_DIR=$CONTROLS_INSTALL_DIR is not a Ghost SDK directory" >&2
   exit 1
 fi
-if [ ! -x "$GSIM_PROJ/build/ghost_sim" ]; then
-  echo "run_sim.sh: $GSIM_PROJ/build/ghost_sim not found; build first:" >&2
-  echo "  source scripts/env.sh && cmake -S . -B build && cmake --build build -j" >&2
-  exit 1
-fi
+gsim_require_binary ghost_sim || exit 1
 
 gsim_prepare_run_dir
 cd "$GSIM_PROJ"

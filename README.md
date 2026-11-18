@@ -31,8 +31,8 @@ Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim
 | `gazebo` | [`gsim_gazebo`](simulators/gsim_gazebo/README.md) | Gazebo Harmonic (DART) | container | custom SDF worlds |
 | `remote` | [`gsim_remote`](simulators/gsim_remote/README.md) | MuJoCo, in `gsim_server` | container or host | physics in its own process; several robots in one world |
 
-MuJoCo, Bullet and Gazebo drive the legs, the arm (`arm 1`) and Ghost's synthetic depth camera
-(terrain perception); the remote backend drives the legs. Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick runs every
+Every backend drives the legs, the arm (`arm 1`) and Ghost's synthetic depth camera
+(terrain perception). Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick runs every
 `2000 / gsim_control_rate` steps (500 Hz by default).
 
 ## Repository Layout

@@ -37,10 +37,13 @@ class MujocoWorld : public ISimWorld {
   bool wantsMainThreadViewer() const override;
   void runViewer(std::atomic_bool& keep_alive) override;
 
-  // Arm and depth camera of one robot, as in ISimBackend.
-  void setArmLocked(int robot, bool locked);
-  void setWristCommand(int robot, const WristCommand& cmd);
-  void readWrist(int robot, WristState& w);
+  bool supportsArm() const override { return true; }
+  void setArmLocked(int robot, bool locked) override;
+  void setWristCommand(int robot, const WristCommand& cmd) override;
+  void readWrist(int robot, WristState& w) override;
+  bool supportsDepthCamera() const override { return true; }
+  bool renderDepthCamera(int robot, PointCloud& cloud_B) override;
+  // ISimBackend::updateDepthCamera for one robot: a frame every kStepsPerFrame calls.
   bool updateDepthCamera(int robot, PointCloud& cloud_B);
 
   // Diagnostics / tests.

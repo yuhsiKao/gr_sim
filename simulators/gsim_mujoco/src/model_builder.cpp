@@ -9,6 +9,7 @@
 
 #include "gsim_core/bullet_motor.hpp"
 #include "gsim_core/depth_camera.hpp"
+#include "gsim_core/sim_math.hpp"
 
 namespace gsim {
 
@@ -327,30 +328,29 @@ BuiltWorld buildMujocoWorld(const WorldOptions& opt) {
   return out;
 }
 
+RobotOptions robotOptions(const RobotSpec& spec) {
+  RobotOptions r;
+  r.urdf_path = spec.urdf_path;
+  r.num_sdk_joints = spec.num_sdk_joints;
+  r.fixed_base = spec.fixed_base;
+  r.base_pos = spec.pos0_W.cast<double>();
+  r.base_quat = quatFromRpy(spec.rpy0).cast<double>();
+  r.arm_joints = spec.arm_joints;
+  return r;
+}
+
 BuiltModel buildMujocoModel(const ModelOptions& opt) {
   WorldOptions w;
   w.scene_path = opt.scene_path;
   w.toe_friction = opt.toe_friction;
   w.toe_solref = opt.toe_solref;
-  RobotOptions r;
-  r.urdf_path = opt.urdf_path;
-  r.num_sdk_joints = opt.num_sdk_joints;
-  r.fixed_base = opt.fixed_base;
-  r.base_pos = opt.base_pos;
-  r.base_quat = opt.base_quat;
-  r.arm_joints = opt.arm_joints;
-  w.robots.push_back(r);
+  w.robots.push_back(opt);   // the RobotOptions part
   BuiltWorld built = buildMujocoWorld(w);
   BuiltModel out;
+  if (!built.robots.empty()) static_cast<BuiltRobot&>(out) = built.robots[0];
   out.model = built.model;
   out.error = built.error;
   out.warnings = built.warnings;
-  if (!built.robots.empty()) {
-    out.joints = built.robots[0].joints;
-    out.arm = built.robots[0].arm;
-    out.base_body = built.robots[0].base_body;
-    out.depth_camera = built.robots[0].depth_camera;
-  }
   return out;
 }
 

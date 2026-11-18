@@ -11,7 +11,7 @@ The package holds both ends and the protocol between them. It depends only on `g
 | File | Purpose |
 | --- | --- |
 | `protocol.hpp` | Message layout and the socket helpers. |
-| `RemoteBackend` | `ISimBackend` for `ghost_sim`: one round trip to the server per physics step. |
+| `RemoteBackend` | `ISimBackend` for `ghost_sim`: one round trip to the server per physics step, one more per depth frame. |
 | `WorldServer` | Serves an `ISimWorld` to its controllers, one robot each; real-time pacing and pause. |
 
 ## Run: One Robot
@@ -47,10 +47,15 @@ scripts/multi.sh down          # when done
   which is what `multi.sh mavgui <i>` does) and its own DDS domain, 124 + index.
 - **The robots share the world.** They collide with each other, and the window, the real-time
   factor and pause (space bar) apply to all of them.
+- **Each robot is configured by its own controller.** `scripts/multi.sh robot 0 arm 1` gives robot
+  0 the arm while robot 1 has none; every robot has its own depth camera, on while its
+  `vision_mode` turns the cameras on.
 - **One gamepad drives one robot at a time.** Start every mavgui with `--joystick`
   (`scripts/multi.sh mavgui 0 --joystick`, `... mavgui 1 --joystick`): the gamepad starts on robot
-  0; D-pad right hands it to the next robot, D-pad left to the previous one. The window title shows `[GAMEPAD]` on the robot that has
-  it; the others stand still, and the gamepad's buttons (soft e-stop, arm) only reach that robot.
+  0; D-pad right hands it to the next robot, D-pad left to the previous one, among the robots of
+  the server that was started last (`GSIM_ROBOTS=1 scripts/multi.sh server`: nothing to switch).
+  The window title shows `[GAMEPAD]` on the robot that has it; the others stand still, and the
+  gamepad's buttons (soft e-stop, arm) only reach that robot.
   Without `--joystick` a mavgui takes the keyboard while its window has the focus.
 - **Robot `i` starts 1.5 m beside robot `i - 1`.** `gsim_spawn "x y yaw_deg"` after
   `multi.sh robot <i>` puts it elsewhere; robots must start at least 1 m apart.
@@ -73,6 +78,7 @@ Giving one program a parameter that belongs to the other is an error.
 | `gsim_scene`, `gsim_toe_friction`, `gsim_toe_solref` | as for `gsim_backend mujoco` | error |
 | `gsim_urdf_dir` | where the URDF is loaded from | where the robot type is looked up |
 | `gsim_control_rate`, `gsim_log` | error | as usual; may differ between robots |
+| `arm` (the SDK's own argument) | not used | `1` = this robot has the arm |
 
 All processes must be the same build and see the same SDK: a controller sends the URDF's file
 name and the server loads that file from its own `gsim_urdf_dir`.
@@ -85,15 +91,16 @@ both ends run on one machine. A different version on the other end is refused.
 | Message | Direction | Contents |
 | --- | --- | --- |
 | `Hello` / `Welcome` | controller → server / back | The robot's index; the server's physics step and number of robots. |
-| `LoadRobot` / `Loaded` | controller → server / back | URDF file name, joint count, fixed base, start pose; success or the reason. Answered once every robot has joined and the world is built. |
+| `LoadRobot` / `Loaded` | controller → server / back | URDF file name, joint count, fixed base, start pose, arm joints; success or the reason. Answered once every robot has joined and the world is built. |
 | `ResetJoint` | controller → server | Initial joint angle. |
-| `Step` / `State` | controller → server / back | Once per physics step: joint torques and external force; base pose, velocities and joint state. |
+| `Step` / `State` | controller → server / back | Once per physics step: joint torques, external force, arm lock and wrist command; base pose, velocities, joint and wrist state. |
+| `RenderDepth` / `Cloud` | controller → server / back | Every 66 steps while the robot's cameras are on: the depth camera's point cloud (75 × 1500 points, 1.35 MB). |
 | `Bye` | controller → server | The controller is leaving. |
 | `Error` | server → controller | A message the server could not accept. |
 
 The world steps once every connected controller has asked for the step, so the controllers and
 the physics share one clock. With one robot the result is identical to `gsim_backend mujoco`, bit
-for bit. One round trip costs about 5 µs.
+for bit: joints, wrist and depth cloud. One round trip costs about 5 µs, a depth frame about 1 ms.
 
 ## Behaviour
 
@@ -105,7 +112,7 @@ for bit. One round trip costs about 5 µs.
 | Two robots start less than 1 m apart | The server refuses to build the world and stops; every controller reports the reason. |
 | A controller connects after the simulation has started | Refused; the running robots are not disturbed. |
 | The server stops (Ctrl-C, window closed) | Every `ghost_sim` stops by itself and exits normally. |
-| A controller stops or crashes while the simulation runs | Its robot stays in the world without torque; the server stops when the last controller has left. |
+| A controller stops or crashes while the simulation runs | Its robot stays in the world without torque, its arm locked; the server stops when the last controller has left. |
 | A controller hangs without disconnecting | The world waits for it, and the server names the robot every 5 s. |
 | The server is paused (space bar in its window) | Every controller waits in its step; Ctrl-C still stops it. |
 | Another user on the machine tries to connect | Refused: the socket file is readable and writable by its owner only. |
@@ -113,7 +120,6 @@ for bit. One round trip costs about 5 µs.
 
 ## Limits
 
-- Legs only: no arm (`arm 1` is refused) and no depth camera, so no terrain perception.
 - The server's physics is MuJoCo.
 - The number of robots is fixed when the server starts; a robot cannot join a running simulation.
 - Robots in different containers only see their own MBLink and DDS domain: tools for robot `i`

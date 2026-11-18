@@ -36,20 +36,20 @@ bool parseNumbers(const std::string& s, std::array<double, N>& out) {
 
 bool parseFlag(const std::string& s) { return s == "1" || s == "true"; }
 
-int parseInt(const std::string& s) {   // 0 unless the whole string is an integer
-  char* end = nullptr;
-  const long v = std::strtol(s.c_str(), &end, 10);
-  if (s.empty() || end == s.c_str() || *end != '\0' || v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max())
-    return 0;
-  return static_cast<int>(v);
-}
-
 int parseIntOr(const std::string& s, int bad) {   // bad unless the whole string is an integer
   char* end = nullptr;
   const long v = std::strtol(s.c_str(), &end, 10);
   if (s.empty() || end == s.c_str() || *end != '\0' || v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max())
     return bad;
   return static_cast<int>(v);
+}
+
+int parseInt(const std::string& s) { return parseIntOr(s, 0); }
+
+// True when the parameter was given at all.
+bool given(const ArgLookup& lookup, const char* name) {
+  static const std::string unset = "\x01unset";
+  return lookup(name, unset) != unset;
 }
 
 // Parameters of the controller, which gsim_server refuses.
@@ -76,10 +76,9 @@ GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, in
   a.toe_parse_ok = friction_ok && solref_ok;
   a.server = lookup("gsim_server", "");
   if (a.backend == "remote") {
-    const std::string unset = "\x01unset";
     for (const char* name : kServerOnly)
-      if (lookup(name, unset) != unset) a.remote_conflicts.push_back(name);
-    if (const std::string h = lookup("gsim_headless", unset); h != unset && !parseFlag(h))
+      if (given(lookup, name)) a.remote_conflicts.push_back(name);
+    if (given(lookup, "gsim_headless") && !parseFlag(lookup("gsim_headless", "")))
       a.remote_conflicts.push_back("gsim_headless");
     a.headless = true;
     a.rtf = 0.0;
@@ -88,10 +87,9 @@ GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, in
   a.robot = parseIntOr(lookup("gsim_robot", "0"), -1);
   a.robots = parseIntOr(lookup("gsim_robots", "1"), -1);
   a.spawn_ok = parseNumbers(lookup("gsim_spawn", "0 0 0"), a.spawn);
-  const std::string unset = "\x01unset";
-  a.robots_given = lookup("gsim_robots", unset) != unset;
+  a.robots_given = given(lookup, "gsim_robots");
   for (const char* name : kControllerOnly)
-    if (lookup(name, unset) != unset) a.controller_only_given.push_back(name);
+    if (given(lookup, name)) a.controller_only_given.push_back(name);
   return a;
 }
 

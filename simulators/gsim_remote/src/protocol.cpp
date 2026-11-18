@@ -12,7 +12,7 @@ namespace gsim::remote {
 
 namespace {
 
-constexpr uint32_t kMaxPayload = 1u << 20;
+constexpr uint32_t kMaxPayload = 4u << 20;   // a depth cloud is 75 x 1500 points = 1.35 MB
 constexpr int kRestTimeoutMs = 5000;   // for the rest of a message once its first byte is here
 
 bool makeAddr(const std::string& path, sockaddr_un* addr, std::string* err) {
@@ -40,23 +40,25 @@ int waitReadable(int fd, int timeout_ms) {
   }
 }
 
-// Reads exactly n bytes. first_timeout_ms applies until the first byte arrives.
+// Reads exactly n bytes. first_timeout_ms applies until the first byte arrives. What has already
+// arrived is taken without waiting first (one system call for a Step or a State).
 Recv readExact(int fd, void* buf, size_t n, int first_timeout_ms) {
   auto* p = static_cast<uint8_t*>(buf);
   size_t got = 0;
   int timeout = first_timeout_ms;
   while (got < n) {
+    const ssize_t r = recv(fd, p + got, n - got, MSG_DONTWAIT);
+    if (r > 0) {
+      got += static_cast<size_t>(r);
+      timeout = kRestTimeoutMs;
+      continue;
+    }
+    if (r == 0) return Recv::kClosed;
+    if (errno == EINTR) continue;
+    if (errno != EAGAIN && errno != EWOULDBLOCK) return Recv::kClosed;
     const int w = waitReadable(fd, timeout);
     if (w == 0) return got == 0 && timeout == first_timeout_ms ? Recv::kTimeout : Recv::kClosed;
     if (w < 0) return Recv::kClosed;
-    const ssize_t r = recv(fd, p + got, n - got, 0);
-    if (r == 0) return Recv::kClosed;
-    if (r < 0) {
-      if (errno == EINTR || errno == EAGAIN) continue;
-      return Recv::kClosed;
-    }
-    got += static_cast<size_t>(r);
-    timeout = kRestTimeoutMs;
   }
   return Recv::kOk;
 }
@@ -125,15 +127,6 @@ int connectUnix(const std::string& path, std::string* err) {
     return -1;
   }
   return fd;
-}
-
-int waitForData(int fd, int timeout_ms) {
-  const int w = waitReadable(fd, timeout_ms);
-  if (w <= 0) return w;
-  char byte;
-  const ssize_t r = recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
-  if (r > 0) return 1;
-  return r < 0 && (errno == EAGAIN || errno == EINTR) ? 0 : -1;
 }
 
 void closeFd(int fd) {

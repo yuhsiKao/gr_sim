@@ -3,6 +3,8 @@
 // every connected controller has asked for the step, so simulated time is shared by all of them;
 // real-time pacing and pause are decided here, not by the controllers.
 #pragma once
+#include <poll.h>
+
 #include <atomic>
 #include <string>
 #include <vector>
@@ -67,6 +69,12 @@ class WorldServer {
   bool built_ = false;
   long steps_ = 0;
   std::vector<uint8_t> payload_;
+  PointCloud cloud_;   // the last depth frame sent
+  // Scratch of pollOnce() and stepWorld(), kept between calls (2000 steps per second).
+  std::vector<pollfd> poll_fds_;
+  std::vector<size_t> order_;
+  std::vector<State> states_;
+  Eigen::ArrayXf tau_, q_, dq_;
 };
 
 }  // namespace gsim::remote

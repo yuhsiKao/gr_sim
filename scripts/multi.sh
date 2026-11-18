@@ -9,15 +9,17 @@
 #   scripts/multi.sh down                stop the containers
 # Start the server first, then every robot; the simulation begins when all of them have joined.
 # Robot i starts 1.5 m beside robot i - 1 unless gsim_spawn "x y yaw_deg" is given.
-# GSIM_ROBOTS=<n> changes the number of robots the server waits for (compose.multi.yaml has two).
+# GSIM_ROBOTS=<n> scripts/multi.sh server changes the number of robots the server waits for
+# (compose.multi.yaml has two containers for robots). The server notes the number in run/robots,
+# which is where the mavgui learn how many robots share the gamepad.
 set -euo pipefail
 proj="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 compose=(docker compose -f "$proj/docker/compose.multi.yaml")
 sock=/root/gr_sim/run/gsim.sock   # in the repository folder, which every container mounts
-robots="${GSIM_ROBOTS:-2}"
+run="$proj/run"
 
 usage() {
-  sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -41,7 +43,20 @@ case "${1:-}" in
   down) exec "${compose[@]}" down ;;
   server)
     shift
-    inside gr-physics scripts/run_server.sh gsim_server "$sock" gsim_robots "$robots" "$@"
+    robots="${GSIM_ROBOTS:-2}"
+    count=(gsim_robots "$robots")
+    for ((k = 1; k < $#; k++)); do   # gsim_robots among the arguments wins
+      if [ "${!k}" = gsim_robots ]; then
+        next=$((k + 1))
+        robots="${!next}"
+        count=()
+      fi
+    done
+    # A new world: the gamepad starts on robot 0 again, and the mavgui see this world's robots.
+    mkdir -p "$run"
+    rm -f "$run/joystick_robot" "$run/robots"
+    echo "$robots" > "$run/robots"
+    inside gr-physics scripts/run_server.sh gsim_server "$sock" "${count[@]}" "$@"
     ;;
   robot)
     robot_index "${2:-}"
@@ -56,9 +71,8 @@ case "${1:-}" in
     i=$2
     shift 2
     # with --joystick all mavgui share the gamepad: D-pad left / right hands it to another robot
-    tty=-i
-    [ -t 0 ] && tty=-it
-    exec docker exec "$tty" -e GSIM_JOY_ROBOT="$i" -e GSIM_JOY_ROBOTS="$robots" "gr-robot-$i" scripts/mavgui.sh "$@"
+    # (among the robots of the running server, see scripts/mavgui.sh)
+    inside "gr-robot-$i" env GSIM_JOY_ROBOT="$i" ${GSIM_ROBOTS:+GSIM_JOY_ROBOTS="$GSIM_ROBOTS"} scripts/mavgui.sh "$@"
     ;;
   *) usage ;;
 esac

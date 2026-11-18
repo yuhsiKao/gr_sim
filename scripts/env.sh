@@ -33,6 +33,14 @@ export GSIM_PY="${GSIM_PY:-$HOME/miniconda3/envs/ghost_mavgui/bin/python}"
 # that shares the repository with another one (docker/compose.multi.yaml) gets its own folder.
 export GSIM_RUN_DIR="${GSIM_RUN_DIR:-$GSIM_PROJ/run}"
 
+# gsim_require_binary <name>: the built program build/<name>, or how to build it (returns 1).
+gsim_require_binary() {
+  [ -x "$GSIM_PROJ/build/$1" ] && return 0
+  echo "$GSIM_PROJ/build/$1 not found; build first:" >&2
+  echo "  source scripts/env.sh && cmake -S . -B build && cmake --build build -j" >&2
+  return 1
+}
+
 # Copy the SDK's planner config into $GSIM_RUN_DIR/config (once) so that
 # `planner_config $GSIM_RUN_DIR/config/default_settings.yaml` keeps writes out of the SDK.
 gsim_prepare_run_dir() {

@@ -74,8 +74,12 @@ void WorldServer::drop(size_t index, bool quiet) {
     if (!quiet) log(kInfo, "the controller of " + robotName(c.robot) + " left before the simulation started");
     return;
   }
-  // The robot stays in the world: no torque, no external force.
+  // The robot stays in the world: no torque, no external force, the arm locked and the wrist off.
   world_.setJointTorques(c.robot, Eigen::ArrayXf::Zero(c.spec.num_sdk_joints));
+  if (!c.spec.arm_joints.empty()) {
+    world_.setArmLocked(c.robot, true);
+    world_.setWristCommand(c.robot, WristCommand{});
+  }
   world_.applyExternalForce(c.robot, Eigen::Vector3f::Zero(), Eigen::Vector3f::Zero());
   std::string msg = "the controller of " + robotName(c.robot) + " left after " + std::to_string(steps_) + " steps";
   if (num_robots_ > 1) msg += "; the robot stays in the world without torque";
@@ -92,7 +96,8 @@ void WorldServer::protocolError(size_t index, const std::string& text) {
 }
 
 void WorldServer::pollOnce(int listen_fd, int timeout_ms) {
-  std::vector<pollfd> fds;
+  std::vector<pollfd>& fds = poll_fds_;
+  fds.clear();
   if (listen_fd >= 0) fds.push_back({listen_fd, POLLIN, 0});
   const size_t first_client = fds.size();
   for (const Client& c : clients_) fds.push_back({c.fd, POLLIN, 0});
@@ -131,7 +136,12 @@ void WorldServer::handleMessage(size_t index) {
     if (clientOf(static_cast<int>(h.robot)))
       return protocolError(index, robotName(static_cast<int>(h.robot)) + " already has a controller");
     c.robot = static_cast<int>(h.robot);
-    if (!sendMsg(c.fd, MsgType::kWelcome, Welcome{world_.timestep(), static_cast<uint32_t>(num_robots_)}))
+    Welcome w{};
+    w.timestep = world_.timestep();
+    w.num_robots = static_cast<uint32_t>(num_robots_);
+    w.supports_arm = world_.supportsArm();
+    w.supports_depth = world_.supportsDepthCamera();
+    if (!sendMsg(c.fd, MsgType::kWelcome, w))
       return drop(index, false);
     int joined = 0;
     for (const Client& k : clients_) joined += k.robot >= 0;
@@ -150,6 +160,14 @@ void WorldServer::handleMessage(size_t index) {
       setText(refused.error, "bad URDF file name");
     else if (m.num_sdk_joints < 1 || m.num_sdk_joints > kMaxJoints)
       setText(refused.error, "bad joint count " + std::to_string(m.num_sdk_joints));
+    else if (m.num_arm_joints < 0 || m.num_arm_joints > kMaxArmJoints)
+      setText(refused.error, "bad arm joint count " + std::to_string(m.num_arm_joints));
+    else if (m.num_arm_joints > 0 && !world_.supportsArm())
+      setText(refused.error, "the physics of this server has no arm support");
+    else
+      for (int i = 0; i < m.num_arm_joints; ++i)
+        if (m.arm_joints[i] < 0 || m.arm_joints[i] >= m.num_sdk_joints)
+          setText(refused.error, "bad arm joint " + std::to_string(m.arm_joints[i]));
     if (refused.error[0]) {
       log(kError, robotName(c.robot) + ": LoadRobot refused: " + getText(refused.error));
       if (!sendMsg(c.fd, MsgType::kLoaded, refused)) drop(index, false);
@@ -161,6 +179,7 @@ void WorldServer::handleMessage(size_t index) {
     c.spec.fixed_base = m.fixed_base != 0;
     c.spec.pos0_W = Eigen::Map<const Eigen::Vector3f>(m.pos0_W);
     c.spec.rpy0 = Eigen::Map<const Eigen::Vector3f>(m.rpy0);
+    c.spec.arm_joints.assign(m.arm_joints, m.arm_joints + m.num_arm_joints);
     c.has_spec = true;   // answered by buildWorld() once every robot is here
     return;
   }
@@ -181,6 +200,14 @@ void WorldServer::handleMessage(size_t index) {
     c.step = m;
     c.has_step = true;
     c.stepped = true;
+    return;
+  }
+  if (type == MsgType::kRenderDepth) {
+    // Between two steps only: the frame shows the state after the robot's last step.
+    if (!built_ || c.has_step) return protocolError(index, "RenderDepth before LoadRobot or while a Step is waiting");
+    const bool ok = world_.renderDepthCamera(c.robot, cloud_);
+    const uint32_t bytes = ok ? static_cast<uint32_t>(cloud_.size() * sizeof(float)) : 0;
+    if (!sendMsg(c.fd, MsgType::kCloud, cloud_.data(), bytes)) drop(index, false);
     return;
   }
   protocolError(index, "unexpected message " + std::to_string(static_cast<int>(type)) + " from the controller");
@@ -223,12 +250,13 @@ bool WorldServer::buildWorld() {
 void WorldServer::stepWorld() {
   const double dt = world_.timestep();
   // In the order of the robots, whatever order the controllers connected in.
-  std::vector<size_t> order;
+  std::vector<size_t>& order = order_;
+  order.clear();
   for (size_t k = 0; k < clients_.size(); ++k)
     if (clients_[k].robot >= 0) order.push_back(k);
   std::sort(order.begin(), order.end(), [this](size_t a, size_t b) { return clients_[a].robot < clients_[b].robot; });
 
-  Eigen::ArrayXf tau;
+  Eigen::ArrayXf& tau = tau_;
   for (size_t k : order) {
     const Client& c = clients_[k];
     if (c.step.n_tau > 0) {
@@ -237,13 +265,23 @@ void WorldServer::stepWorld() {
     }
     world_.applyExternalForce(c.robot, Eigen::Map<const Eigen::Vector3f>(c.step.f_B),
                               Eigen::Map<const Eigen::Vector3f>(c.step.p_B));
+    if (!c.spec.arm_joints.empty()) {
+      WristCommand cmd;
+      cmd.mode = wristModeFromSdkValue(c.step.wrist_mode).value_or(WristMode::kOff);
+      cmd.pos_des = Eigen::Map<const Eigen::Array4f>(c.step.wrist_pos_des);
+      cmd.vel_des = Eigen::Map<const Eigen::Array4f>(c.step.wrist_vel_des);
+      cmd.max_current = Eigen::Map<const Eigen::Array4f>(c.step.wrist_max_current);
+      world_.setArmLocked(c.robot, c.step.arm_locked != 0);
+      world_.setWristCommand(c.robot, cmd);
+    }
   }
   world_.step();
   ++steps_;
 
-  std::vector<State> states(order.size());
+  std::vector<State>& states = states_;
+  states.assign(order.size(), State{});
   BaseState base;
-  Eigen::ArrayXf q, dq;
+  Eigen::ArrayXf &q = q_, &dq = dq_;
   for (size_t n = 0; n < order.size(); ++n) {
     Client& c = clients_[order[n]];
     world_.readState(c.robot, base, q, dq);
@@ -257,9 +295,13 @@ void WorldServer::stepWorld() {
     s.quat_WB[2] = base.quat_WB.y();
     s.quat_WB[3] = base.quat_WB.z();
     Eigen::Map<Eigen::Vector3f>(s.angvel_W) = base.angvel_W;
-    s.n = static_cast<int32_t>(std::min<Eigen::Index>(q.size(), kMaxJoints));
-    std::copy(q.data(), q.data() + s.n, s.q);
+    std::copy(q.data(), q.data() + std::min<Eigen::Index>(q.size(), kMaxJoints), s.q);
     std::copy(dq.data(), dq.data() + std::min<Eigen::Index>(dq.size(), kMaxJoints), s.dq);
+    WristState wrist;   // NaN unless the robot has an arm
+    if (!c.spec.arm_joints.empty()) world_.readWrist(c.robot, wrist);
+    Eigen::Map<Eigen::Array4f>(s.wrist_q) = wrist.q;
+    Eigen::Map<Eigen::Array4f>(s.wrist_dq) = wrist.dq;
+    Eigen::Map<Eigen::Array4f>(s.wrist_current) = wrist.current;
     c.has_step = false;
   }
   if (steps_ % kPaceSteps == 0) pacer_.wait(steps_ * dt);
@@ -312,9 +354,7 @@ long WorldServer::serve(int listen_fd, std::atomic_bool& keep_alive) {
       was_paused = false;
       stepWorld();
       waiting_since = wallSeconds();
-      // Between steps only look for what has already arrived (a controller leaving, a late one).
-      pollOnce(listen_fd, 0);
-      continue;
+      continue;   // every Step is answered: the next round waits for the controllers (or a late one)
     }
     // Paused, or a controller has not asked yet. A message from a controller whose Step is
     // waiting means it is leaving.

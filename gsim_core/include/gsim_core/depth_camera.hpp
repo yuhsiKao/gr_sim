@@ -24,6 +24,13 @@ struct FactoryDepthCamera {
   static float tanHalfFovy();   // tan(kFovyDeg / 2)
 };
 
+// Ghost's SimWrapper::perceptionUpdate renders a new frame every kStepsPerFrame calls, the first
+// on the kStepsPerFrame-th. Counts one call in `calls` and says whether this one is a frame.
+inline bool depthFrameDue(long& calls) {
+  calls = (calls + 1) % FactoryDepthCamera::kStepsPerFrame;
+  return calls == 0;
+}
+
 // depth: kWidth * kHeight standard OpenGL depth values (0 = near plane, 1 = far plane) in Ghost's
 // pixel order (k = i * kWidth + j, row i = 0 at the top of the image). Writes one body-frame point per
 // pixel into cloud_B, exactly as SimWrapper::initFirstTime + depthToCloud do.

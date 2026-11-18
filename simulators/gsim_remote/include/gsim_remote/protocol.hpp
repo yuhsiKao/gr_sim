@@ -3,7 +3,8 @@
 // are built from the same sources, so messages are packed structs in host byte order; the
 // version number catches a mix of old and new binaries.
 //
-// One physics step is one round trip: Step (torques, external force) -> State (base, joints).
+// One physics step is one round trip: Step (torques, external force, arm command) -> State (base,
+// joints, wrist). A depth frame is one more: RenderDepth -> Cloud.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -13,10 +14,15 @@
 namespace gsim::remote {
 
 inline constexpr uint32_t kMagic = 0x4D495347;   // "GSIM"
-inline constexpr uint16_t kVersion = 1;
+inline constexpr uint16_t kVersion = 2;
 inline constexpr int kMaxJoints = 32;
+inline constexpr int kMaxArmJoints = 8;
 
-enum class MsgType : uint16_t { kHello = 1, kWelcome, kLoadRobot, kLoaded, kResetJoint, kStep, kState, kBye, kError };
+enum class MsgType : uint16_t {
+  kHello = 1, kWelcome, kLoadRobot, kLoaded, kResetJoint, kStep, kState, kBye, kError,
+  kRenderDepth,   // no payload: render this robot's depth camera now (between two steps)
+  kCloud,         // the answer: the body-frame points, 3 floats each; no payload = no frame
+};
 
 #pragma pack(push, 1)
 struct Header {
@@ -31,6 +37,8 @@ struct Hello {
 struct Welcome {
   double timestep;
   uint32_t num_robots;
+  uint8_t supports_arm;     // the server's world can hold robots with an arm
+  uint8_t supports_depth;   // ... and render their depth cameras
 };
 struct LoadRobot {
   char urdf_file[128];   // file name only; the server resolves it against its own URDF directory
@@ -38,6 +46,8 @@ struct LoadRobot {
   uint8_t fixed_base;
   float pos0_W[3];
   float rpy0[3];
+  int32_t num_arm_joints;               // 0 = no arm
+  int32_t arm_joints[kMaxArmJoints];    // SDK ids, root to tip
 };
 struct Loaded {
   uint8_t ok;
@@ -53,6 +63,11 @@ struct Step {
   float tau[kMaxJoints];
   float f_B[3];
   float p_B[3];
+  uint8_t arm_locked;    // arm command (robots with an arm only; send every step)
+  int32_t wrist_mode;    // WristMode
+  float wrist_pos_des[4];
+  float wrist_vel_des[4];
+  float wrist_max_current[4];
 };
 struct State {
   uint64_t seq;
@@ -61,9 +76,11 @@ struct State {
   float vel_W[3];
   float quat_WB[4];   // w x y z
   float angvel_W[3];
-  int32_t n;
   float q[kMaxJoints];
   float dq[kMaxJoints];
+  float wrist_q[4];        // robots with an arm only; NaN otherwise
+  float wrist_dq[4];
+  float wrist_current[4];
 };
 struct Error {
   char text[256];
@@ -90,14 +107,11 @@ int acceptClient(int listen_fd, int timeout_ms);
 // Connected socket, or -1 with *err set (the message names the path).
 int connectUnix(const std::string& path, std::string* err);
 void closeFd(int fd);   // ignores fd < 0
-// 1: data is waiting on fd, 0: nothing within timeout_ms, -1: the peer closed without sending.
-// Nothing is consumed. Tells a controller from a connection that was only a probe.
-int waitForData(int fd, int timeout_ms);
 
 // False when the peer is gone (never raises SIGPIPE).
 bool sendMsg(int fd, MsgType type, const void* payload, uint32_t size);
 
-enum class Recv { kOk, kTimeout, kClosed, kBad };   // kBad: wrong magic or version, or size > 1 MiB
+enum class Recv { kOk, kTimeout, kClosed, kBad };   // kBad: wrong magic or version, or size > 4 MiB
 // One whole message. The timeout applies to the wait for its first byte; the rest of a message
 // that has started is waited for up to 5 s (kClosed after that).
 Recv recvMsg(int fd, int timeout_ms, MsgType* type, std::vector<uint8_t>* payload);

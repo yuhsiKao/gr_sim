@@ -91,6 +91,7 @@ class RobotSelector:
         self.robots = robots
         self._clock = clock
         self._seen = None
+        self._cached = None  # the selected robot as of the last refresh(); None = read the file every time
 
     def _read(self):
         try:
@@ -102,7 +103,12 @@ class RobotSelector:
         return (robot, switched) if 0 <= robot < self.robots else (0, 0.0)
 
     def selected(self):
-        return self._read()[0]
+        return self._read()[0] if self._cached is None else self._cached
+
+    def refresh(self):
+        """Reads the file now; selected() and active() answer from this until the next refresh()
+        (once per GUI frame instead of on every axis read)."""
+        self._cached = self._read()[0]
 
     def active(self):
         return self.selected() == self.robot
@@ -117,6 +123,8 @@ class RobotSelector:
         with open(tmp, "w") as f:
             f.write(f"{(robot + step) % self.robots} {now!r}\n")
         os.replace(tmp, self.path)  # the other mavgui never read a half-written file
+        if self._cached is not None:
+            self.refresh()
 
     def changed(self):
         """True the first time, and whenever the selected robot is another one than at the last call."""
@@ -171,7 +179,8 @@ def patch_selection(pygame, selector):
         print(f"mavgui_launch: the gamepad drives robot {selector.selected()}"
               + (" (this one)" if has_it else "; D-pad left / right switches"), flush=True)
 
-    def get(*args, **kwargs):
+    def get(*args, **kwargs):  # mavgui calls this once per frame
+        selector.refresh()
         events = filter_events(original_get(*args, **kwargs), selector, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION)
         if selector.changed():
             announce()

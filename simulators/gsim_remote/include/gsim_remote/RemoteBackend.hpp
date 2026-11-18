@@ -4,7 +4,6 @@
 // owns the window; this side only waits for it.
 //
 // The server's world may hold several robots; this backend is one of them (SimConfig::robot_index).
-// Legs only (no arm, no depth camera).
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -34,6 +33,15 @@ class RemoteBackend final : public ISimBackend {
   bool running() const override { return alive_; }
   double timestep() const override { return timestep_; }
   void applyExternalForce(const Eigen::Vector3f& f_B, const Eigen::Vector3f& p_B) override;
+  // Arm and depth camera: whatever the server's world supports. The arm command travels with the
+  // next step() and the wrist state comes back with it; a depth frame is one more round trip,
+  // every kStepsPerFrame calls.
+  bool supportsArm() const override { return supports_arm_; }
+  void setArmLocked(bool locked) override;
+  void setWristCommand(const WristCommand& cmd) override;
+  void readWrist(WristState& w) override;
+  bool supportsDepthCamera() const override { return supports_depth_; }
+  bool updateDepthCamera(PointCloud& cloud_B) override;
 
  private:
   void log(int level, const std::string& msg) const;
@@ -49,7 +57,9 @@ class RemoteBackend final : public ISimBackend {
   double timestep_ = 0.0;
   int num_robots_ = 1;   // of the server's world
   int num_joints_ = 0;
-  uint64_t seq_ = 0;
+  bool supports_arm_ = false, supports_depth_ = false;
+  bool has_arm_ = false;   // the loaded robot has an arm
+  long depth_calls_ = 0;   // frame counter as Ghost's SimWrapper
   Step out_{};
   State last_{};
   std::vector<uint8_t> buf_;

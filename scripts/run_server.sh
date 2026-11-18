@@ -10,11 +10,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 
-if [ ! -x "$GSIM_PROJ/build/gsim_server" ]; then
-  echo "run_server.sh: $GSIM_PROJ/build/gsim_server not found; build first:" >&2
-  echo "  source scripts/env.sh && cmake -S . -B build && cmake --build build -j" >&2
-  exit 1
-fi
+gsim_require_binary gsim_server || exit 1
 
 cd "$GSIM_PROJ"
 exec build/gsim_server "$@"
