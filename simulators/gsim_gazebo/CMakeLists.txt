@@ -4,6 +4,7 @@ add_library(gsim_gazebo STATIC
   src/gazebo_model.cpp
   src/gazebo_system.cpp
   src/GazeboBackend.cpp
+  src/GazeboWorld.cpp
   src/egl_probe.cpp
 )
 find_package(OpenGL REQUIRED COMPONENTS EGL)   # probe for offscreen rendering before the depth camera starts Gazebo's renderer

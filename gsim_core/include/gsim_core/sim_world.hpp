@@ -35,12 +35,17 @@ class ISimWorld {
   virtual void setWristCommand(int /*robot*/, const WristCommand& /*cmd*/) {}     // effective at next step()
   virtual void readWrist(int /*robot*/, WristState& /*w*/) {}                     // state after the last step()
   virtual bool supportsDepthCamera() const { return false; }
-  // Renders the robot's depth camera now, in the state after the last step(): the body-frame
-  // cloud in Ghost's pixel order. False (cloud_B left alone) when it cannot render.
+  // The robot's depth camera as the body-frame cloud in Ghost's pixel order: the world's newest
+  // frame. It shows the state after the last step(), or, where the simulator renders on its own
+  // schedule, up to FactoryDepthCamera::kStepsPerFrame - 1 steps before it. False (cloud_B left
+  // alone) when there is none.
   virtual bool renderDepthCamera(int /*robot*/, PointCloud& /*cloud_B*/) { return false; }
   virtual bool running() const = 0;
   virtual double timestep() const = 0;
   virtual bool paused() const { return false; }
+  // True when a step takes long enough for the cores that wait for it to fall into a deep idle
+  // state: whoever runs the world then holds them out of it (cpu_latency.hpp).
+  virtual bool wantsCpuLatencyHold() const { return false; }
   virtual bool wantsMainThreadViewer() const { return false; }
   virtual void runViewer(std::atomic_bool& /*keep_alive*/) {}
 };

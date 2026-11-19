@@ -76,6 +76,9 @@ the socket to the physics is a file in the mounted repository folder (`gr_sim/ru
 [`simulators/gsim_remote/README.md`](../simulators/gsim_remote/README.md). For one more robot, copy
 a `gr-robot-<i>` block in the compose file and raise its three numbers.
 
+`gr-physics` is also given the host's `/dev/cpu_dma_latency`: `gsim_server` holds it open to keep
+a Gazebo world with several robots at real time (the same README, Real Time).
+
 ## Notes
 
 - The container shares the host network: run one simulation at a time, in the container or on

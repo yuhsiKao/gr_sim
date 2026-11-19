@@ -14,11 +14,15 @@ The package holds both ends and the protocol between them. It depends only on `g
 | `RemoteBackend` | `ISimBackend` for `ghost_sim`: one round trip to the server per physics step, one more per depth frame. |
 | `WorldServer` | Serves an `ISimWorld` to its controllers, one robot each; real-time pacing and pause. |
 
+The world behind the server is MuJoCo ([`MujocoWorld`](../gsim_mujoco/README.md), the default) or
+Gazebo ([`GazeboWorld`](../gsim_gazebo/README.md), `gsim_backend gazebo` on the server).
+
 ## Run: One Robot
 
 ```bash
 # terminal 1: the physics (MuJoCo), with its window
 scripts/run_server.sh gsim_server /tmp/gsim.sock
+# ... or Gazebo:  scripts/run_server.sh gsim_server /tmp/gsim.sock gsim_backend gazebo
 # terminal 2: the controller
 scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
 # terminal 3: command the robot as usual
@@ -36,6 +40,7 @@ Each controller runs in its own container, next to one container for the physics
 ```bash
 scripts/multi.sh up            # once: gr-physics, gr-robot-0, gr-robot-1
 scripts/multi.sh server        # terminal 1: the world and its window, waits for 2 robots
+                               #   (Gazebo: scripts/multi.sh server gsim_backend gazebo)
 scripts/multi.sh robot 0       # terminal 2
 scripts/multi.sh robot 1       # terminal 3; the simulation starts when all robots have joined
 scripts/multi.sh mavgui 0      # terminal 4: commands robot 0
@@ -70,12 +75,14 @@ Giving one program a parameter that belongs to the other is an error.
 | Parameter | `gsim_server` | `ghost_sim` (remote) |
 | --- | --- | --- |
 | `gsim_server <path>` | required: the socket to listen on | required: the socket to connect to |
+| `gsim_backend` | the physics: `mujoco` (default) or `gazebo` | `remote` |
 | `gsim_robots <n>` | robots in the world, 1 to 8 (default `1`) | error |
 | `gsim_robot <i>` | error | which robot this controller drives (default `0`) |
 | `gsim_spawn "x y yaw_deg"` | error | where the robot starts (default `"0 0 0"`) |
 | `gsim_headless` | `1` = no window (default `0`) | always headless |
 | `gsim_rtf` | real-time factor (default `1.0`, `0` = as fast as possible) | error |
 | `gsim_scene`, `gsim_toe_friction`, `gsim_toe_solref` | as for `gsim_backend mujoco` | error |
+| `gsim_world` | as for `gsim_backend gazebo` | error |
 | `gsim_urdf_dir` | where the URDF is loaded from | where the robot type is looked up |
 | `gsim_control_rate`, `gsim_log` | error | as usual; may differ between robots |
 | `arm` (the SDK's own argument) | not used | `1` = this robot has the arm |
@@ -99,8 +106,43 @@ both ends run on one machine. A different version on the other end is refused.
 | `Error` | server → controller | A message the server could not accept. |
 
 The world steps once every connected controller has asked for the step, so the controllers and
-the physics share one clock. With one robot the result is identical to `gsim_backend mujoco`, bit
-for bit: joints, wrist and depth cloud. One round trip costs about 5 µs, a depth frame about 1 ms.
+the physics share one clock. With one robot the result is identical to the same simulator inside
+`ghost_sim`, bit for bit: joints, wrist and (MuJoCo) depth cloud. One round trip costs about 5 µs,
+a depth frame about 1 ms.
+
+Gazebo renders its cameras on its own schedule, every 66 steps of the world, so a controller gets
+the newest of those frames: up to 33 ms old, where `gsim_backend gazebo` gets the frame of the
+very step.
+
+## Real Time
+
+A controller sleeps while it waits for the world's step. A Gazebo step is long enough for the
+idle cores to enter a deep idle state, and waking them on every step costs more time than the
+step has left. While a Gazebo world runs, `gsim_server` therefore asks Linux to keep the CPUs out
+of idle states that take more than 50 µs to leave: it holds `/dev/cpu_dma_latency` open. The
+request covers the whole machine, which draws more power meanwhile, and ends with the server,
+however it stops. A MuJoCo world does not need it and does not ask.
+
+Real-time factor with `gsim_rtf 0` (as fast as possible), standing on flat ground, no window, on
+an Intel Core Ultra 9 285K:
+
+| Robots on Gazebo | Deep idle states held off | Not held off |
+| --- | --- | --- |
+| 1 | 3.5 to 3.9 | 1.8 to 2.0 |
+| 2 | 2.2 | 0.8 to 1.0 |
+| 3 | 1.5 to 1.6 | 0.65 to 0.7 |
+
+The server says which case applies when it starts:
+
+| Message | Meaning |
+| --- | --- |
+| `deep CPU idle states are held off while the server runs` | The request is in force. |
+| `deep CPU idle states are not held off (<reason>)` | The device is missing or cannot be written (it needs root). One robot keeps real time anyway. |
+
+`gr-physics` gets the device from [`docker/compose.multi.yaml`](../../docker/compose.multi.yaml);
+a container created before that line was added gets it with `scripts/multi.sh up`. Where the
+device cannot be had, `sudo cpupower idle-set -D 100` on the host does the same for the whole
+machine until `sudo cpupower idle-set -E`.
 
 ## Behaviour
 
@@ -120,7 +162,11 @@ for bit: joints, wrist and depth cloud. One round trip costs about 5 µs, a dept
 
 ## Limits
 
-- The server's physics is MuJoCo.
+- The server's physics is MuJoCo or Gazebo. The Bullet simulator is the SDK's own and holds one
+  robot.
+- Gazebo keeps real time with several robots only while deep CPU idle states are held off (Real
+  Time above). Each robot adds about 0.1 ms to its 0.5 ms step, so expect real time to be lost at
+  about five robots. MuJoCo runs two robots at more than six times real time.
 - The number of robots is fixed when the server starts; a robot cannot join a running simulation.
 - Robots in different containers only see their own MBLink and DDS domain: tools for robot `i`
   run in `gr-robot-<i>` (or in the same DDS domain on the same Docker network).

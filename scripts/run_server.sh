@@ -4,6 +4,7 @@
 # through:
 #   scripts/run_server.sh gsim_server /tmp/gsim.sock                    # MuJoCo with viewer
 #   scripts/run_server.sh gsim_server /tmp/gsim.sock gsim_headless 1
+#   scripts/run_server.sh gsim_server /tmp/gsim.sock gsim_backend gazebo   # Gazebo (in the gr-sim container)
 #   scripts/run_server.sh gsim_server /tmp/gsim.sock gsim_robots 2      # two robots (scripts/multi.sh)
 # then, in another terminal:
 #   scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock

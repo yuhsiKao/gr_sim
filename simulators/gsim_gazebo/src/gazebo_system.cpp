@@ -10,19 +10,25 @@
 #include <gz/sim/Model.hh>
 #include <gz/sim/World.hh>
 #include <gz/sim/components/ContactSensorData.hh>
+#include <gz/sim/components/Geometry.hh>
+#include <gz/sim/components/Pose.hh>
 #include <gz/sim/components/JointAxis.hh>
 #include <gz/sim/components/JointForceCmd.hh>
 #include <gz/sim/components/JointVelocityCmd.hh>
 #include <gz/sim/components/Name.hh>
 
 #include <Eigen/Geometry>
+#include <sdf/Box.hh>
+#include <sdf/Geometry.hh>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 #include "gsim_core/bullet_motor.hpp"
+#include "gsim_core/depth_camera.hpp"
 #include "gsim_gazebo/gazebo_model.hpp"
 
 namespace gsim {
@@ -31,24 +37,13 @@ GazeboSystem::GazeboSystem(GazeboBuffers* buffers) : buf_(buffers) {}
 
 void GazeboSystem::Configure(const gz::sim::Entity& entity, const std::shared_ptr<const sdf::Element>&,
                              gz::sim::EntityComponentManager& ecm, gz::sim::EventManager& events) {
-  // The depth camera sits 6 cm below the body origin, inside the body's visual mesh. OpenGL (MuJoCo,
-  // Ghost's Bullet) clips what is nearer than the near plane and culls the hull's inner faces, so
-  // those cameras see through it; Gazebo's depth camera reports such hits as -inf and sees the inner
-  // faces once the body tilts. Seen from the camera every hull face is an inner face, so the body's
-  // visuals are hidden in the server's sensor scene (the `gz sim -g` window has its own scene).
-  if (buf_->hide_body_from_sensors) {
-    const std::string body = buf_->model_name + "::body";   // Gazebo names scene nodes <model>::<link>
-    pre_render_ = events.Connect<gz::sim::events::PreRender>([body] {   // rendering thread
-      auto scene = gz::rendering::sceneFromFirstRenderEngine();
-      if (auto visual = scene ? scene->VisualByName(body) : nullptr) visual->SetVisible(false);   // with its children
-    });
-  }
   const gz::sim::Entity model_entity = gz::sim::World(entity).ModelByName(ecm, buf_->model_name);
   if (model_entity == gz::sim::kNullEntity) return;
   gz::sim::Model model(model_entity);
   body_ = model.LinkByName(ecm, "body");
   if (body_ == gz::sim::kNullEntity) return;
   gz::sim::Link(body_).EnableVelocityChecks(ecm, true);
+  if (buf_->hide_body_from_sensors) hideBodyFromSensors(ecm, events);
 
   const float nan = std::numeric_limits<float>::quiet_NaN();
   joints_.assign(buf_->num_sdk_joints, gz::sim::kNullEntity);
@@ -104,6 +99,61 @@ void GazeboSystem::Configure(const gz::sim::Entity& entity, const std::shared_pt
     }
   }
   buf_->arm_configured = ok;   // the same paused iteration's PostUpdate fills the wrist state
+}
+
+namespace {
+
+struct Slab {
+  gz::math::Vector3d size, centre;   // [m], in the body link's frame
+};
+
+// The part of the body's collision box above the depth camera's plane. Nothing when that collision
+// is not an unrotated box that reaches above the plane.
+std::optional<Slab> bodySlab(const gz::sim::EntityComponentManager& ecm, gz::sim::Entity body) {
+  const gz::sim::Entity collision = gz::sim::Link(body).CollisionByName(ecm, "body_collision");
+  if (collision == gz::sim::kNullEntity) return std::nullopt;
+  const auto* geometry = ecm.Component<gz::sim::components::Geometry>(collision);
+  const auto* pose = ecm.Component<gz::sim::components::Pose>(collision);
+  const sdf::Box* box = geometry ? geometry->Data().BoxShape() : nullptr;
+  if (!box || !pose || pose->Data().Rot() != gz::math::Quaterniond::Identity) return std::nullopt;
+  const gz::math::Vector3d size = box->Size(), centre = pose->Data().Pos();
+  constexpr double kClearance = 0.005;   // [m] above the camera's plane
+  const double bottom = std::max(centre.Z() - 0.5 * size.Z(), double(FactoryDepthCamera::bodyFromCamera().translation().z()) + kClearance);
+  const double top = centre.Z() + 0.5 * size.Z();
+  if (top - bottom < 0.01) return std::nullopt;
+  return Slab{{size.X(), size.Y(), top - bottom}, {centre.X(), centre.Y(), 0.5 * (top + bottom)}};
+}
+
+}  // namespace
+
+// The depth camera sits 6 cm below the body origin, inside the body's visual mesh. OpenGL (MuJoCo,
+// Ghost's Bullet) clips what is nearer than the near plane and culls the hull's inner faces, so
+// those cameras see through it; Gazebo's depth camera reports such hits as -inf and sees the inner
+// faces once the body tilts. So the body's visuals are hidden in the server's sensor scene (the
+// `gz sim -g` window has its own scene). That scene is shared by every robot's camera, and they
+// must still see each other's bodies: a slab stands in for the body, the part of its collision box
+// above the camera's plane. No camera can see its own (it is behind it), every other one does.
+void GazeboSystem::hideBodyFromSensors(const gz::sim::EntityComponentManager& ecm, gz::sim::EventManager& events) {
+  const std::optional<Slab> slab = bodySlab(ecm, body_);
+  buf_->body_slab = slab.has_value();
+  const std::string body = buf_->model_name + "::body";   // Gazebo names scene nodes <model>::<link>
+  const std::string slab_name = body + "::gsim_slab";
+  pre_render_ = events.Connect<gz::sim::events::PreRender>([body, slab_name, slab] {   // rendering thread
+    auto scene = gz::rendering::sceneFromFirstRenderEngine();
+    auto link = scene ? scene->VisualByName(body) : nullptr;
+    if (!link) return;
+    if (!slab) return link->SetVisible(false);   // with its children: other cameras see through this body
+    for (unsigned k = 0; k < link->ChildCount(); ++k) {
+      auto child = std::dynamic_pointer_cast<gz::rendering::Visual>(link->ChildByIndex(k));
+      if (child && child->Name() != slab_name) child->SetVisible(false);
+    }
+    if (scene->VisualByName(slab_name)) return;
+    auto visual = scene->CreateVisual(slab_name);
+    visual->AddGeometry(scene->CreateBox());
+    visual->SetLocalScale(slab->size);
+    visual->SetLocalPosition(slab->centre);
+    link->AddChild(visual);
+  });
 }
 
 void GazeboSystem::rememberLimits(const gz::sim::EntityComponentManager& ecm, gz::sim::Entity joint) {

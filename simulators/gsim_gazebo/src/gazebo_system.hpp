@@ -53,6 +53,7 @@ struct GazeboBuffers {
   double toe_torsional = 0.0;                           // SimConfig::toe_friction[1]; 0 = off
 
   bool hide_body_from_sensors = false;                  // depth camera: the body's visuals are hidden in the server's sensor scene
+  bool body_slab = false;                               // ... and a slab stands in for the body there (hideBodyFromSensors)
 };
 
 class GazeboSystem : public gz::sim::System,
@@ -78,6 +79,7 @@ class GazeboSystem : public gz::sim::System,
   void driveServo(gz::sim::EntityComponentManager& ecm, gz::sim::Entity joint, double q, double v_cmd, double max_force);
   void rememberLimits(const gz::sim::EntityComponentManager& ecm, gz::sim::Entity joint);
   void applyToeTorsion(gz::sim::EntityComponentManager& ecm, double dt);
+  void hideBodyFromSensors(const gz::sim::EntityComponentManager& ecm, gz::sim::EventManager& events);
 
   struct Toe {
     gz::sim::Entity link = gz::sim::kNullEntity, collision = gz::sim::kNullEntity;

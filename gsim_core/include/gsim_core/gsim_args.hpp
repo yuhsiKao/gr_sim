@@ -51,8 +51,8 @@ GsimArgs parseGsimArgs(const ArgLookup& lookup, const GsimDefaults& defaults, in
 // Empty = valid. Each message names the offending gsim_* parameter. For ghost_sim.
 std::vector<std::string> validateGsimArgs(const GsimArgs& a);
 
-// The same for gsim_server (which parses with gsim_backend forced to mujoco): its socket path,
-// the number of robots and the physics parameters; parameters of the controller are refused.
+// The same for gsim_server, where gsim_backend names the physics (mujoco or gazebo): its socket
+// path, the number of robots and the physics parameters; parameters of the controller are refused.
 std::vector<std::string> validateServerArgs(const GsimArgs& a);
 
 // "key value" pairs from argv[1], argv[2], ... (the SDK's convention): the value of the first

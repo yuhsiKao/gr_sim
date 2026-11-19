@@ -18,9 +18,9 @@ The repository follows one guiding principle:
 - **Each simulator gets its own self-contained package** named `simulators/gsim_<name>`,
   depending only on `gsim_core` and its own engine.
 - **`ghost_sim` is the executable** — it links the SDK and the simulators that were built in.
-- **`gsim_server` is the physics on its own** — a MuJoCo world without the SDK, which `ghost_sim`
-  reaches over a unix socket (`gsim_backend remote`). One world can hold several robots, each
-  driven by its own `ghost_sim`.
+- **`gsim_server` is the physics on its own** — a MuJoCo or Gazebo world without the SDK, which
+  `ghost_sim` reaches over a unix socket (`gsim_backend remote`). One world can hold several
+  robots, each driven by its own `ghost_sim`.
 
 Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim`, `gsim_server`).
 
@@ -29,7 +29,7 @@ Dependencies only point downwards (`gsim_core` ← `simulators/*` ← `ghost_sim
 | `mujoco` (default) | [`gsim_mujoco`](simulators/gsim_mujoco/README.md) | MuJoCo 4.0.0 | container or host | main simulator |
 | `bullet` | [`gsim_bullet`](simulators/gsim_bullet/README.md) | Bullet, through the SDK's SimWrapper | container or host | reference (Ghost's own physics and world) |
 | `gazebo` | [`gsim_gazebo`](simulators/gsim_gazebo/README.md) | Gazebo Harmonic (DART) | container | custom SDF worlds |
-| `remote` | [`gsim_remote`](simulators/gsim_remote/README.md) | MuJoCo, in `gsim_server` | container or host | physics in its own process; several robots in one world |
+| `remote` | [`gsim_remote`](simulators/gsim_remote/README.md) | MuJoCo or Gazebo, in `gsim_server` | container or host | physics in its own process; several robots in one world |
 
 Every backend drives the legs, the arm (`arm 1`) and Ghost's synthetic depth camera
 (terrain perception). Physics always steps at 0.5 ms (2000 Hz); the SDK's control tick runs every

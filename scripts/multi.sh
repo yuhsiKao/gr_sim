@@ -3,6 +3,7 @@
 # Run on the host, from anywhere:
 #   scripts/multi.sh up                  start the containers (gr-physics, gr-robot-0, gr-robot-1)
 #   scripts/multi.sh server [args]       the physics and its window: gsim_server with 2 robots
+#                                        (MuJoCo; `server gsim_backend gazebo` for Gazebo)
 #   scripts/multi.sh robot <i> [args]    the controller of robot i (ghost_sim, gsim_backend remote)
 #   scripts/multi.sh mavgui <i> [args]   mavgui for robot i (arguments as scripts/mavgui.sh); with
 #                                        --joystick on every robot, D-pad left / right switches which one it drives
@@ -19,7 +20,7 @@ sock=/root/gr_sim/run/gsim.sock   # in the repository folder, which every contai
 run="$proj/run"
 
 usage() {
-  sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  awk 'NR > 1 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}" >&2   # the comment block above
   exit 2
 }
 

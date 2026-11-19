@@ -39,6 +39,10 @@ services:
     container_name: gr-physics
     environment:
       <<: *env
+    # gsim_server holds this open while a Gazebo world runs, which keeps the CPUs out of deep idle
+    # states (see simulators/gsim_remote/README.md, Real Time).
+    devices:
+      - /dev/cpu_dma_latency
 
   # A robot: its own network namespace (the default bridge network of this file), DDS domain
   # 124 + index, and its own folder for the files the controller writes. Copy a block and raise

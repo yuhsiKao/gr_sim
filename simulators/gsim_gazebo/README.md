@@ -5,6 +5,10 @@ Gazebo Harmonic backend (`gsim_backend gazebo`). A `gz::sim::Server` runs inside
 (`gz sim -g`) is a separate process. Built only where gz-sim 8 is installed, i.e. in the `gr-sim`
 container ([`docker/README.md`](../../docker/README.md)).
 
+`GazeboWorld` is the same world with several robots, one model each; `gsim_server` runs it with
+`gsim_backend gazebo` ([`gsim_remote`](../gsim_remote/README.md)). The robots collide with each
+other, and one robot's state does not depend on the others while they do not touch.
+
 ## Run
 
 ```bash
@@ -49,7 +53,8 @@ Without `gsim_headless 1`, `ghost_sim` starts `gz sim -g`, which attaches to the
 - **Depth camera**: Ghost's downward camera as a Gazebo `depth_camera` sensor, rendered offscreen
   on the GPU (EGL), headless or with the window. Without an EGL device it is turned off with a
   warning and the rest runs. libEGL prints two harmless `failed to create dri2 screen` warnings at
-  start-up.
+  start-up. The camera sits inside the body, so for the cameras the body is a slab (the part of
+  its collision box above the camera): a robot never sees its own, and sees the other robots'.
 
 ## Against MuJoCo and the Factory Sim
 

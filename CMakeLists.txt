@@ -58,7 +58,7 @@ add_subdirectory(simulators)   # one package per simulator
 # the executable: SDK platform hooks + simulator factory. Its build files go to
 # build/ghost_sim-build because build/ghost_sim is the executable itself.
 add_subdirectory(ghost_sim ghost_sim-build)
-# the physics server for `gsim_backend remote`: MuJoCo behind a unix socket, without the SDK.
+# the physics server for `gsim_backend remote`: MuJoCo or Gazebo behind a unix socket, without the SDK.
 if(GSIM_WITH_REMOTE AND GSIM_WITH_MUJOCO)
   add_subdirectory(gsim_server gsim_server-build)
 endif()

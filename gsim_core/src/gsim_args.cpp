@@ -129,6 +129,8 @@ std::vector<std::string> validateServerArgs(const GsimArgs& a) {
   if (a.robots < 1 || a.robots > kMaxRobots)
     errs.push_back("gsim_robots: must be an integer 1.." + std::to_string(kMaxRobots));
   for (const auto& name : a.controller_only_given) errs.push_back(name + ": set it on ghost_sim, not on gsim_server");
+  if (a.backend != "mujoco" && a.backend != "gazebo")
+    errs.push_back("gsim_backend: gsim_server runs mujoco or gazebo, not '" + a.backend + "'");
   physicsErrors(a, errs);
   return errs;
 }

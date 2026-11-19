@@ -203,7 +203,7 @@ void WorldServer::handleMessage(size_t index) {
     return;
   }
   if (type == MsgType::kRenderDepth) {
-    // Between two steps only: the frame shows the state after the robot's last step.
+    // Between two steps only: the frame is the world's newest (ISimWorld::renderDepthCamera).
     if (!built_ || c.has_step) return protocolError(index, "RenderDepth before LoadRobot or while a Step is waiting");
     const bool ok = world_.renderDepthCamera(c.robot, cloud_);
     const uint32_t bytes = ok ? static_cast<uint32_t>(cloud_.size() * sizeof(float)) : 0;

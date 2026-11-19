@@ -1,5 +1,5 @@
 # Engine-agnostic layer: the ISimBackend interface, the simulation loop, pacing, the gsim_*
-# parameters and CSV logging. Depends on no simulator and not on the Ghost SDK.
+# parameters, CSV logging and the CPU idle-state hold. Depends on no simulator and not on the Ghost SDK.
 add_library(gsim_core STATIC
   src/sim_math.cpp
   src/pacer.cpp
@@ -11,6 +11,7 @@ add_library(gsim_core STATIC
   src/bullet_motor.cpp
   src/toe_torsion.cpp
   src/depth_camera.cpp
+  src/cpu_latency.cpp
 )
 target_include_directories(gsim_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(gsim_core PUBLIC Eigen3::Eigen)
