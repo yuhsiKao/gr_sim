@@ -74,9 +74,13 @@ struct GazeboWorld::Impl {
     std::shared_ptr<GazeboSystem> system;
     long short_torque_count = 0;
     long nan_wrist_count = 0;
-    // Depth camera: Gazebo renders it on its sim-time schedule every kStepsPerFrame steps and
-    // publishes the linear depth; the image callback turns each frame into OpenGL depth.
+    // Depth camera: while we listen to its topic (depth_listening), Gazebo renders it on its
+    // sim-time schedule every kStepsPerFrame steps and publishes the linear depth; the image
+    // callback turns each frame into OpenGL depth.
     std::string depth_topic;
+    bool depth_listening = false;
+    long depth_wanted_step = 0;       // the step after which the robot last said it wants frames
+    long depth_first_step = 0;        // the first step whose frame Gazebo renders for this robot
     std::vector<float> depth_frame;   // latest frame as OpenGL depth, row 0 at the top (guarded by depth_mu)
     long depth_frame_step = -1;       // physics step it was rendered at (guarded by depth_mu)
     std::vector<float> depth_gl;      // the frame last taken (sim thread only)
@@ -102,11 +106,13 @@ struct GazeboWorld::Impl {
 
   Robot* robot(int i) const { return server && i >= 0 && i < int(robots.size()) ? robots[i].get() : nullptr; }
   double simTime() const { return robots.empty() ? 0.0 : robots[0]->buffers.sim_time; }
+  long stepCount() const { return timestep > 0.0 ? std::lround(simTime() / timestep) : 0; }
   bool resetDetected() const { return !robots.empty() && robots[0]->buffers.reset_detected; }
 
+  // Gazebo renders a camera only while somebody listens to its topic: listening is the switch.
   // The camera's frames arrive on a gz-transport thread: accept only Ghost's 75 x 1500 float image,
   // turn it into OpenGL depth there and swap it in under the lock.
-  void subscribeDepth(Robot* r) {
+  void cameraOn(Robot* r) {
     const std::function<void(const gz::msgs::Image&)> cb = [this, r](const gz::msgs::Image& msg) {
       constexpr size_t kN = size_t(FactoryDepthCamera::kWidth) * FactoryDepthCamera::kHeight;
       if (msg.width() != unsigned(FactoryDepthCamera::kWidth) || msg.height() != unsigned(FactoryDepthCamera::kHeight) ||
@@ -124,7 +130,14 @@ struct GazeboWorld::Impl {
     if (!depth_node->Subscribe("/" + r->depth_topic, cb)) {
       depth_on = false;
       log(kWarning, "Gazebo: depth camera disabled: cannot subscribe to /" + r->depth_topic);
+      return;
     }
+    r->depth_listening = true;
+    r->depth_first_step = stepCount() + 1;
+  }
+  void cameraOff(Robot* r) {
+    depth_node->Unsubscribe("/" + r->depth_topic);
+    r->depth_listening = false;
   }
 
   // Takes the frame Gazebo rendered at `step` into r.depth_gl. Waits for it: the renderer runs on
@@ -323,6 +336,8 @@ bool GazeboWorld::build() {
     r.system = std::make_shared<GazeboSystem>(&r.buffers);
     r.depth_topic = opt.depth_topic;
     r.depth_frame_step = r.depth_gl_step = -1;
+    r.depth_listening = false;
+    r.depth_wanted_step = r.depth_first_step = 0;
     r.depth_misses_in_row = 0;
   }
   im.depth_frames = 0;
@@ -355,10 +370,7 @@ bool GazeboWorld::build() {
     return false;
   }
   im.server->SetPaused(false);
-  if (im.depth_on) {
-    im.depth_node = std::make_unique<gz::transport::Node>();
-    for (auto& r : im.robots) im.subscribeDepth(r.get());
-  }
+  if (im.depth_on) im.depth_node = std::make_unique<gz::transport::Node>();   // no camera is on yet
   im.reset_reported = false;
   if (!im.cfg.headless && im.gui_pid <= 0) im.startGui();
   return true;
@@ -381,6 +393,9 @@ void GazeboWorld::step() {
   Impl& im = *impl_;
   if (!im.server) return;
   im.server->RunOnce(false);
+  const long now = im.stepCount();
+  for (auto& r : im.robots)
+    if (r->depth_listening && now - r->depth_wanted_step >= FactoryDepthCamera::kStepsPerFrame) im.cameraOff(r.get());
   if (im.resetDetected() && !im.reset_reported) {
     im.reset_reported = true;
     im.log(kError, "Gazebo: the world was reset behind the SDK's back (sim time went backwards); stopping");
@@ -501,19 +516,34 @@ long GazeboWorld::nanWristCount(int robot) const {
 
 bool GazeboWorld::supportsDepthCamera() const { return impl_->depth_on; }
 
+bool GazeboWorld::depthFrameAtLastStep() const {
+  const Impl& im = *impl_;
+  if (!im.depth_on) return false;
+  const long step = im.stepCount();
+  return step > 0 && step % FactoryDepthCamera::kStepsPerFrame == 0;
+}
+
+void GazeboWorld::wantDepthFrames(int robot) {
+  Impl& im = *impl_;
+  Impl::Robot* r = im.robot(robot);
+  if (!r || !im.depth_on) return;
+  r->depth_wanted_step = im.stepCount();
+  if (!r->depth_listening) im.cameraOn(r);
+}
+
 bool GazeboWorld::updateDepthCamera(int robot, PointCloud& cloud_B) {
-  const Impl& im = *impl_;   // on a step of the camera's schedule the newest frame is that step's
-  return im.timestep > 0.0 && std::lround(im.simTime() / im.timestep) % FactoryDepthCamera::kStepsPerFrame == 0 &&
-         renderDepthCamera(robot, cloud_B);
+  wantDepthFrames(robot);
+  return depthFrameAtLastStep() && renderDepthCamera(robot, cloud_B);   // the newest frame is this step's
 }
 
 bool GazeboWorld::renderDepthCamera(int robot, PointCloud& cloud_B) {
   Impl& im = *impl_;
   Impl::Robot* r = im.robot(robot);
-  if (!r || !im.depth_on || im.timestep <= 0.0) return false;
-  const long step = std::lround(im.simTime() / im.timestep);
+  if (!r || !im.depth_on || !r->depth_listening) return false;
+  const long step = im.stepCount();
   const long frame = step - step % FactoryDepthCamera::kStepsPerFrame;   // the newest step of the camera's schedule
-  return frame > 0 && im.takeFrame(*r, frame, cloud_B);
+  // Gazebo renders no frame for a step before the camera came on: there is none to wait for.
+  return frame > 0 && frame >= r->depth_first_step && im.takeFrame(*r, frame, cloud_B);
 }
 
 bool GazeboWorld::bodySlab(int robot) const {
@@ -522,5 +552,10 @@ bool GazeboWorld::bodySlab(int robot) const {
 }
 
 bool GazeboWorld::depthCameraDisabled() const { return impl_->cfg.depth_camera && !impl_->depth_on; }
+
+bool GazeboWorld::depthCameraOn(int robot) const {
+  const Impl::Robot* r = impl_->robot(robot);
+  return r && r->depth_listening;
+}
 
 }  // namespace gsim

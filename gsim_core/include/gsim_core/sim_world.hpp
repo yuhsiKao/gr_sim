@@ -40,6 +40,15 @@ class ISimWorld {
   // schedule, up to FactoryDepthCamera::kStepsPerFrame - 1 steps before it. False (cloud_B left
   // alone) when there is none.
   virtual bool renderDepthCamera(int /*robot*/, PointCloud& /*cloud_B*/) { return false; }
+  // A world that renders its cameras on a schedule of its own, not on request, says so here, and
+  // after every step() whether that step was one of the schedule. renderDepthCamera then gives
+  // the frame of that very step, so that is when to ask for it.
+  virtual bool depthOnOwnSchedule() const { return false; }
+  virtual bool depthFrameAtLastStep() const { return false; }
+  // Such a world renders for the robots that want frames only. A robot says so before every step()
+  // for as long as it does; its frames start with the first step of the schedule after that, and
+  // renderDepthCamera is false for a robot that does not.
+  virtual void wantDepthFrames(int /*robot*/) {}
   virtual bool running() const = 0;
   virtual double timestep() const = 0;
   virtual bool paused() const { return false; }

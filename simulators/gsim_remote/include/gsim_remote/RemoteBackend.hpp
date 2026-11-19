@@ -35,7 +35,8 @@ class RemoteBackend final : public ISimBackend {
   void applyExternalForce(const Eigen::Vector3f& f_B, const Eigen::Vector3f& p_B) override;
   // Arm and depth camera: whatever the server's world supports. The arm command travels with the
   // next step() and the wrist state comes back with it; a depth frame is one more round trip,
-  // every kStepsPerFrame calls.
+  // every kStepsPerFrame calls, or on the steps of the world's own camera schedule if it has one.
+  // The step() after a call of the depth camera tells the world that this robot wants frames.
   bool supportsArm() const override { return supports_arm_; }
   void setArmLocked(bool locked) override;
   void setWristCommand(const WristCommand& cmd) override;
@@ -58,6 +59,7 @@ class RemoteBackend final : public ISimBackend {
   int num_robots_ = 1;   // of the server's world
   int num_joints_ = 0;
   bool supports_arm_ = false, supports_depth_ = false;
+  bool depth_on_schedule_ = false;   // the world renders its cameras on a schedule of its own
   bool has_arm_ = false;   // the loaded robot has an arm
   long depth_calls_ = 0;   // frame counter as Ghost's SimWrapper
   Step out_{};

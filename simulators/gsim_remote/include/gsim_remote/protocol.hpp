@@ -3,8 +3,9 @@
 // are built from the same sources, so messages are packed structs in host byte order; the
 // version number catches a mix of old and new binaries.
 //
-// One physics step is one round trip: Step (torques, external force, arm command) -> State (base,
-// joints, wrist). A depth frame is one more: RenderDepth -> Cloud.
+// One physics step is one round trip: Step (torques, external force, arm command, whether the
+// controller wants depth frames) -> State (base, joints, wrist, whether the step has a depth frame).
+// A depth frame is one more: RenderDepth -> Cloud.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -14,7 +15,7 @@
 namespace gsim::remote {
 
 inline constexpr uint32_t kMagic = 0x4D495347;   // "GSIM"
-inline constexpr uint16_t kVersion = 2;
+inline constexpr uint16_t kVersion = 3;
 inline constexpr int kMaxJoints = 32;
 inline constexpr int kMaxArmJoints = 8;
 
@@ -39,6 +40,7 @@ struct Welcome {
   uint32_t num_robots;
   uint8_t supports_arm;     // the server's world can hold robots with an arm
   uint8_t supports_depth;   // ... and render their depth cameras
+  uint8_t depth_on_schedule;   // ... on a schedule of its own: State::depth_frame says when to ask
 };
 struct LoadRobot {
   char urdf_file[128];   // file name only; the server resolves it against its own URDF directory
@@ -68,6 +70,7 @@ struct Step {
   float wrist_pos_des[4];
   float wrist_vel_des[4];
   float wrist_max_current[4];
+  uint8_t wants_depth;   // the depth camera was called since the last Step (ISimWorld::wantDepthFrames)
 };
 struct State {
   uint64_t seq;
@@ -81,6 +84,7 @@ struct State {
   float wrist_q[4];        // robots with an arm only; NaN otherwise
   float wrist_dq[4];
   float wrist_current[4];
+  uint8_t depth_frame;     // worlds with a camera schedule of their own: this step is one of it
 };
 struct Error {
   char text[256];

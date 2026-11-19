@@ -43,12 +43,12 @@ gr_sim/
 ├── simulators/     # one package per simulator: gsim_mujoco, gsim_bullet, gsim_gazebo, gsim_remote
 ├── ghost_sim/      # the executable: the SDK's bsp hooks + the simulator factory
 ├── gsim_server/    # the physics server for gsim_backend remote
-├── scripts/        # run_sim.sh, run_server.sh, mavgui.sh, rviz.sh, m0_official_sim.sh, check_sdk_untouched.sh
+├── scripts/        # run_sim.sh, run_server.sh, multi.sh, mavgui.sh, rviz.sh, m0_official_sim.sh, check_sdk_untouched.sh
 ├── examples/       # scripts that command the robot over MBLink
 ├── ros2/           # ghost_interfaces: the controller's ROS 2 interface packages
 ├── third_party/    # GhostSDK_1.0.1: the Ghost SDK (submodule, read-only)
 ├── cmake/          # find modules: Ghost SDK, MuJoCo, simulate, Gazebo
-├── docker/         # Dockerfile + compose.yaml (container gr-sim: the default install)
+├── docker/         # Dockerfile, compose.yaml (container gr-sim), compose.multi.yaml (several robots)
 └── install.md      # installation from scratch
 ```
 
@@ -60,7 +60,18 @@ gr_sim/
 
 ## Quick Start
 
-From the project root (inside `gr-sim`), after building:
+There are two setups. They use the same image and the same build, but they are started in
+different places:
+
+- **One robot** — one `ghost_sim` holds the controller and the physics. The commands run inside
+  the `gr-sim` container.
+- **Several robots in one world** — one `gsim_server` holds the world and every robot has its own
+  `ghost_sim`, each program in its own container. The commands run on the host, through
+  `scripts/multi.sh`.
+
+### One Robot
+
+From the project root, inside `gr-sim`, after building:
 
 ```bash
 # 1. Start the simulator (one of)
@@ -69,12 +80,6 @@ scripts/run_sim.sh gsim_scene simulators/gsim_mujoco/models/scene_stairs.xml   #
 scripts/run_sim.sh gsim_backend bullet               # Bullet, Ghost's world
 scripts/run_sim.sh gsim_backend gazebo               # Gazebo, flat ground
 scripts/run_sim.sh gsim_backend gazebo gsim_world simulators/gsim_gazebo/models/world_stairs.sdf
-# ... or with the physics in its own process (start the server first, in its own terminal)
-scripts/run_server.sh gsim_server /tmp/gsim.sock
-scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
-# ... or two robots in one world, each controller in its own container (on the host; see
-# simulators/gsim_remote/README.md)
-scripts/multi.sh up && scripts/multi.sh server       # then: scripts/multi.sh robot 0, robot 1, mavgui 0, mavgui 1
 
 # 2. Options, appended to any line above
 #    arm 1              with the arm
@@ -91,6 +96,57 @@ scripts/m0_official_sim.sh [arm 1]
 Ctrl-C stops `ghost_sim`; close the window to stop the factory sim. All parameters are listed in
 [`ghost_sim/README.md`](ghost_sim/README.md).
 
+One robot can also run with the physics in its own process. This is the split the several-robots
+setup uses, without its containers (start the server first, in its own terminal):
+
+```bash
+scripts/run_server.sh gsim_server /tmp/gsim.sock     # MuJoCo; add gsim_backend gazebo for Gazebo
+scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
+```
+
+### Several Robots
+
+From the project root, on the host, with the build made in `gr-sim`:
+
+```bash
+scripts/multi.sh up            # once: the containers gr-physics, gr-robot-0, gr-robot-1
+scripts/multi.sh server        # terminal 1: the world and its window (MuJoCo), waits for 2 robots
+scripts/multi.sh robot 0       # terminal 2
+scripts/multi.sh robot 1       # terminal 3: the simulation starts when every robot has joined
+scripts/multi.sh mavgui 0      # terminal 4: commands robot 0
+scripts/multi.sh mavgui 1      # terminal 5: commands robot 1
+scripts/multi.sh down          # when done
+
+# Options
+#    scripts/multi.sh server gsim_backend gazebo     Gazebo instead of MuJoCo
+#    scripts/multi.sh server gsim_headless 1         no window
+#    scripts/multi.sh robot 0 arm 1                  robot 0 with the arm
+#    GSIM_ROBOTS=1 scripts/multi.sh server           one robot (more than two: one more
+#                                                    gr-robot-<i> block in docker/compose.multi.yaml)
+```
+
+Ctrl-C in the server's terminal stops every robot. The full guide is
+[`simulators/gsim_remote/README.md`](simulators/gsim_remote/README.md).
+
+### What Differs
+
+| | One robot | Several robots |
+| --- | --- | --- |
+| Where the commands run | inside `gr-sim` | on the host; `scripts/multi.sh` runs each program in its container |
+| Containers | `gr-sim` (`docker/compose.yaml`), on the host's network | `gr-physics` and one `gr-robot-<i>` per robot (`docker/compose.multi.yaml`), each with its own network |
+| Processes | one `ghost_sim`: the controller and the physics | one `gsim_server` (the world) and one `ghost_sim` per robot (its controller) |
+| Simulators | MuJoCo, Bullet, Gazebo | MuJoCo, Gazebo |
+| Parameters | all to `scripts/run_sim.sh` | the world's to `multi.sh server`, a robot's to `multi.sh robot <i>`; one given to the wrong side is an error |
+| Window, real-time factor, pause | `ghost_sim`'s | the server's, for all robots at once |
+| mavgui | `scripts/mavgui.sh` | `scripts/multi.sh mavgui <i>`, one per robot |
+| ROS 2 topics | DDS domain `ROS_DOMAIN_ID`, 124 if unset | robot `i` is DDS domain 124 + `i`; the topic names are the same for every robot |
+| Stopping | Ctrl-C, or close the window | Ctrl-C in the server's terminal stops every robot; a robot stopped on its own stays in the world without torque |
+
+With several robots, a ROS 2 tool picks its robot by the domain, for example
+`ROS_DOMAIN_ID=125 ros2 topic list` for robot 1. It sees that robot from any of these containers,
+from `gr-sim` and from the host. Give the domain on the command itself: a `ROS_DOMAIN_ID` the
+shell exports (in `.bashrc`, say) takes the place of the container's.
+
 ## Safety Notes
 
 - **Never use the SDK's `launch.py`**: it points the controller's config at the SDK, which then
@@ -98,8 +154,10 @@ Ctrl-C stops `ghost_sim`; close the window to stop the factory sim. All paramete
   `run/`.
 - **Do not press "Start" under Log in mavgui**: it writes logs into the SDK. To record gripper
   telemetry, use `scripts/mavgui.sh --record build/grip.csv`.
-- Run one simulation at a time, host or container: they share the host network, and two
-  controllers fight over the SDK's UDP port.
+- Run one setup at a time. Single-robot simulations, host or `gr-sim`, share the host network, and
+  two controllers fight over the SDK's UDP port. The several-robots setup gives every controller
+  its own container, but its robot 0 is in the DDS domain a single robot uses by default (124), so
+  the two would share their topics.
 
 ## Documentation Map
 

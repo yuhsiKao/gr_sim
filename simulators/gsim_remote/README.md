@@ -97,22 +97,25 @@ both ends run on one machine. A different version on the other end is refused.
 
 | Message | Direction | Contents |
 | --- | --- | --- |
-| `Hello` / `Welcome` | controller → server / back | The robot's index; the server's physics step and number of robots. |
+| `Hello` / `Welcome` | controller → server / back | The robot's index; the server's physics step, its number of robots and what its world offers (arm, depth cameras, a camera schedule of its own). |
 | `LoadRobot` / `Loaded` | controller → server / back | URDF file name, joint count, fixed base, start pose, arm joints; success or the reason. Answered once every robot has joined and the world is built. |
 | `ResetJoint` | controller → server | Initial joint angle. |
-| `Step` / `State` | controller → server / back | Once per physics step: joint torques, external force, arm lock and wrist command; base pose, velocities, joint and wrist state. |
+| `Step` / `State` | controller → server / back | Once per physics step: joint torques, external force, arm lock and wrist command, and whether the robot's cameras are on; base pose, velocities, joint and wrist state, and whether the step has a new depth frame (worlds with a camera schedule of their own). |
 | `RenderDepth` / `Cloud` | controller → server / back | Every 66 steps while the robot's cameras are on: the depth camera's point cloud (75 × 1500 points, 1.35 MB). |
 | `Bye` | controller → server | The controller is leaving. |
 | `Error` | server → controller | A message the server could not accept. |
 
 The world steps once every connected controller has asked for the step, so the controllers and
 the physics share one clock. With one robot the result is identical to the same simulator inside
-`ghost_sim`, bit for bit: joints, wrist and (MuJoCo) depth cloud. One round trip costs about 5 µs,
-a depth frame about 1 ms.
+`ghost_sim`, bit for bit: joints, wrist and depth cloud. One round trip costs about 5 µs, a depth
+frame about 1 ms; on Gazebo the server waits about 1 ms more for the renderer.
 
-Gazebo renders its cameras on its own schedule, every 66 steps of the world, so a controller gets
-the newest of those frames: up to 33 ms old, where `gsim_backend gazebo` gets the frame of the
-very step.
+MuJoCo renders a camera when it is asked, which a controller does every 66 steps from the moment
+its cameras come on. Gazebo renders on its own schedule, every 66 steps of the world, and only
+the cameras of the robots whose cameras are on: the server says with every state whether that step
+was one of the schedule, and the controllers ask then. Every robot so gets the frame of that very
+step, from the first step of the schedule after its cameras came on. While all cameras are off,
+neither simulator renders anything.
 
 ## Real Time
 

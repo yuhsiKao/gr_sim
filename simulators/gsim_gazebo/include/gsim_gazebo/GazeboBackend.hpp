@@ -47,6 +47,7 @@ class GazeboBackend : public ISimBackend {
   double wristAxisTorque(int i) const { return world_.wristAxisTorque(0, i); }
   long nanWristCount() const { return world_.nanWristCount(0); }
   bool depthCameraDisabled() const { return world_.depthCameraDisabled(); }
+  bool depthCameraOn() const { return world_.depthCameraOn(0); }
 
  private:
   GazeboWorld world_;

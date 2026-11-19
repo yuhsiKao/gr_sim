@@ -51,10 +51,11 @@ Without `gsim_headless 1`, `ghost_sim` starts `gz sim -g`, which attaches to the
   collide with the part's `.stl` (the URDF's `.obj` has no normals, which DART cannot load). A jaw
   pressed into its own limit reports about 0 current, as the factory sim does.
 - **Depth camera**: Ghost's downward camera as a Gazebo `depth_camera` sensor, rendered offscreen
-  on the GPU (EGL), headless or with the window. Without an EGL device it is turned off with a
-  warning and the rest runs. libEGL prints two harmless `failed to create dri2 screen` warnings at
-  start-up. The camera sits inside the body, so for the cameras the body is a slab (the part of
-  its collision box above the camera): a robot never sees its own, and sees the other robots'.
+  on the GPU (EGL), headless or with the window, and only while the SDK has its cameras on.
+  Without an EGL device it is turned off with a warning and the rest runs. libEGL prints two
+  harmless `failed to create dri2 screen` warnings at start-up. The camera sits inside the body,
+  so for the cameras the body is a slab (the part of its collision box above the camera): a robot
+  never sees its own, and sees the other robots'.
 
 ## Against MuJoCo and the Factory Sim
 

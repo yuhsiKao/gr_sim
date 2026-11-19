@@ -141,6 +141,7 @@ void WorldServer::handleMessage(size_t index) {
     w.num_robots = static_cast<uint32_t>(num_robots_);
     w.supports_arm = world_.supportsArm();
     w.supports_depth = world_.supportsDepthCamera();
+    w.depth_on_schedule = world_.depthOnOwnSchedule();
     if (!sendMsg(c.fd, MsgType::kWelcome, w))
       return drop(index, false);
     int joined = 0;
@@ -265,6 +266,7 @@ void WorldServer::stepWorld() {
     }
     world_.applyExternalForce(c.robot, Eigen::Map<const Eigen::Vector3f>(c.step.f_B),
                               Eigen::Map<const Eigen::Vector3f>(c.step.p_B));
+    if (c.step.wants_depth) world_.wantDepthFrames(c.robot);
     if (!c.spec.arm_joints.empty()) {
       WristCommand cmd;
       cmd.mode = wristModeFromSdkValue(c.step.wrist_mode).value_or(WristMode::kOff);
@@ -277,6 +279,7 @@ void WorldServer::stepWorld() {
   }
   world_.step();
   ++steps_;
+  const bool depth_frame = world_.depthFrameAtLastStep();
 
   std::vector<State>& states = states_;
   states.assign(order.size(), State{});
@@ -302,6 +305,7 @@ void WorldServer::stepWorld() {
     Eigen::Map<Eigen::Array4f>(s.wrist_q) = wrist.q;
     Eigen::Map<Eigen::Array4f>(s.wrist_dq) = wrist.dq;
     Eigen::Map<Eigen::Array4f>(s.wrist_current) = wrist.current;
+    s.depth_frame = depth_frame;
     c.has_step = false;
   }
   if (steps_ % kPaceSteps == 0) pacer_.wait(steps_ * dt);

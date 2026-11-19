@@ -63,6 +63,7 @@ bool RemoteBackend::initFromFd(int fd, const SimConfig& cfg) {
   num_robots_ = static_cast<int>(w.num_robots);
   supports_arm_ = w.supports_arm != 0;
   supports_depth_ = w.supports_depth != 0;
+  depth_on_schedule_ = w.depth_on_schedule != 0;
   return true;
 }
 
@@ -187,9 +188,12 @@ void RemoteBackend::readWrist(WristState& w) {
 
 // Ghost's SimWrapper::perceptionUpdate: a new frame every kStepsPerFrame calls, the first on the
 // kStepsPerFrame-th. Only then is the server asked; it renders the state after the last step().
+// A world with a camera schedule of its own is asked on the steps of that schedule instead, which
+// is when its newest frame is the one of the last step().
 bool RemoteBackend::updateDepthCamera(PointCloud& cloud_B) {
   if (!alive_ || !supports_depth_) return false;
-  if (!depthFrameDue(depth_calls_)) return false;
+  out_.wants_depth = 1;   // goes with the next step
+  if (depth_on_schedule_ ? !last_.depth_frame : !depthFrameDue(depth_calls_)) return false;
   sendMsg(fd_, MsgType::kRenderDepth, nullptr, 0);
   if (!waitFor(MsgType::kCloud, -1, &buf_)) return false;
   if (buf_.empty()) return false;   // the server could not render
@@ -208,6 +212,7 @@ void RemoteBackend::step() {
   // A failed send is not reported here: the server's last message (why it left) may still be
   // waiting to be read, and waitFor reports the closed connection otherwise.
   sendMsg(fd_, MsgType::kStep, out_);
+  out_.wants_depth = 0;   // until the depth camera is called again
   if (!waitFor(MsgType::kState, -1, &buf_)) return;
   State s{};
   if (!payloadAs(buf_, &s)) return fail("bad state from gsim_server " + kSameBuild);

@@ -35,12 +35,18 @@ class GazeboWorld : public ISimWorld {
   void setWristCommand(int robot, const WristCommand& cmd) override;
   void readWrist(int robot, WristState& w) override;
 
-  // Depth cameras (SimConfig::depth_camera): Gazebo renders every robot's camera on its sim-time
-  // schedule, every FactoryDepthCamera::kStepsPerFrame steps. renderDepthCamera gives the newest of
-  // those frames (at most kStepsPerFrame - 1 steps old); updateDepthCamera is ISimBackend's call for
-  // one robot: true only on the steps of that schedule.
+  // Depth cameras (SimConfig::depth_camera): Gazebo renders a camera on its sim-time schedule,
+  // every FactoryDepthCamera::kStepsPerFrame steps (depthFrameAtLastStep says which steps those
+  // are), and only for a robot that wants frames: one that said so (wantDepthFrames) within the
+  // last kStepsPerFrame steps. renderDepthCamera gives such a robot the newest frame rendered for
+  // it (that step's on a step of the schedule, at most kStepsPerFrame - 1 steps old otherwise).
+  // updateDepthCamera is ISimBackend's call for one robot: it says that the robot wants frames and
+  // is true only on the steps of the schedule.
   bool supportsDepthCamera() const override;
   bool renderDepthCamera(int robot, PointCloud& cloud_B) override;
+  bool depthOnOwnSchedule() const override { return true; }
+  bool depthFrameAtLastStep() const override;
+  void wantDepthFrames(int robot) override;
   bool updateDepthCamera(int robot, PointCloud& cloud_B);
 
   // Problems with spec in this world (empty = ok), without starting Gazebo.
@@ -55,6 +61,7 @@ class GazeboWorld : public ISimWorld {
   double wristAxisTorque(int robot, int i) const;      // i = 0..3
   long nanWristCount(int robot) const;
   bool depthCameraDisabled() const;    // the cameras gave up (no offscreen rendering)
+  bool depthCameraOn(int robot) const; // Gazebo renders this robot's camera: the robot wants frames
   bool bodySlab(int robot) const;      // the robot's body is a slab in the sensor scene (see gazebo_system.cpp)
 
  private:
