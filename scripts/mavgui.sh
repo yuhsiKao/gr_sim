@@ -13,6 +13,8 @@
 #                                        (scripts/multi.sh mavgui <i> --joystick sets GSIM_JOY_ROBOT;
 #                                        without GSIM_JOY_ROBOTS, n is what scripts/multi.sh server
 #                                        wrote to run/robots)
+# With GSIM_JOY_ROBOT=<i> the window's title is "mavgui robot <i>", with the keyboard too: it
+# tells the robots' mavgui apart.
 # Other arguments are passed to mavgui.py. Both GUI modes start mavgui through
 # scripts/mavgui_launch.py, which also fixes mavgui's drop-down lookups for pygame_gui >= 0.6.10.
 set -euo pipefail
@@ -36,6 +38,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# One of several robots: its number in the window's title, in place of mavgui's own.
+if [ -n "${GSIM_JOY_ROBOT:-}" ]; then
+  launch+=(--title "mavgui robot $GSIM_JOY_ROBOT")
+fi
 
 cd "$GSIM_PROJ"
 export PYTHONDONTWRITEBYTECODE=1

@@ -1,0 +1,31 @@
+# Several robots in one world: what `scripts/multi.sh start` runs. Another file:
+# `scripts/multi.sh start <file>`. Paths are relative to the repository.
+
+# The world: gsim_server's parameters.
+world:
+  backend: mujoco            # mujoco | gazebo
+  headless: false            # true: no window
+  # rtf: 1.0                 # real-time factor; 0: as fast as possible
+  # scene: simulators/gsim_mujoco/models/scene_stairs.xml    # MuJoCo's scene
+  # world: simulators/gsim_gazebo/models/world_stairs.sdf    # Gazebo's world
+  # args: [gsim_toe_friction, "3 0.04 0"]                  # any other parameter: key, value, ...
+
+# One entry per robot, at most 8. Robot i is entry i, counted from 0: it runs in the container
+# gr-robot-<i> and its ROS 2 topics are in DDS domain 124 + i.
+# mavgui: joystick opens the robot's mavgui, its window titled "mavgui robot <i>". One gamepad
+# drives one robot at a time: D-pad left / right picks it, and its window's title shows [GAMEPAD].
+# With no gamepad connected these mavgui take the keyboard; mavgui: keyboard does so in any case.
+robots:
+  - spawn: [0.0, 0.0, 0.0]   # x [m], y [m], yaw [deg]; robots start at least 1 m apart
+    mavgui: joystick         # false | joystick | keyboard
+    # arm: true              # with the arm
+    # control_rate: 500      # [Hz]
+    # log: build/robot0.csv  # CSV log of this robot
+    # args: [key, value]     # any other parameter of ghost_sim
+
+  - spawn: [0.0, 1.5, 0.0]
+    mavgui: joystick
+
+  # - spawn: [0.0, 3.0, 0.0]
+  #   mavgui: joystick
+  #   arm: true

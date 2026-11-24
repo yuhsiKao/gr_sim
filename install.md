@@ -2,13 +2,17 @@
 
 This guide sets up `gr_sim` from scratch with Docker. One image carries everything — the build
 packages, the Python 3.10 env, Gazebo Harmonic and ROS 2 Jazzy — and one build produces all three
-simulator backends (MuJoCo, Bullet, Gazebo). Nothing but Docker is installed on the host.
+simulator backends (MuJoCo, Bullet, Gazebo). Nothing but Docker is installed on the host; the
+setup with several robots also uses the host's `python3`.
 
 ## Requirements
 
 - Ubuntu host with an X11 session (developed on Ubuntu 24.04), for the simulator windows.
 - NVIDIA GPU with its driver, for the windows and the offscreen depth camera.
 - Docker Engine with the Docker Compose plugin (Compose ≥ 2.30).
+- For several robots in one world (`scripts/multi.sh`): PyYAML for the host's system `python3`
+  (`sudo apt install python3-yaml`). `multi.sh` runs `/usr/bin/python3`, so a conda or virtual
+  environment that is active in the terminal does not matter.
 - NVIDIA Container Toolkit.
 - Access to the private `GhostSDK_1.0.1` repository on GitHub: GhostSDK 1.0.1 is a submodule of
   this repository.

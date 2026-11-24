@@ -2,15 +2,18 @@
 """Run Ghost's mavgui.py (read-only, straight from the SDK) with a working gamepad mapping
 and drop-down menus that work with pygame_gui >= 0.6.10 (see DropDownChoice).
 
-  mavgui_launch.py [--record CSV] [--select ROBOT ROBOTS FILE] MAVGUI_PY [mavgui args...]
+  mavgui_launch.py [--record CSV] [--title TITLE] [--select ROBOT ROBOTS FILE] MAVGUI_PY [mavgui args...]
                                                  used by `scripts/mavgui.sh`
       --record CSV   also write the gripper telemetry (current, position, setpoint, arm/wrist
                      FSM) to CSV with wall time, to line up with the grcontrols_proc log
+      --title TITLE  the window's title instead of mavgui's own, which is the same for every
+                     robot: tells several mavgui apart
       --select ROBOT ROBOTS FILE
                      one gamepad for several robots, each with its own mavgui: this mavgui is
                      robot ROBOT of ROBOTS, and FILE (shared by all of them) says which robot
                      the gamepad drives. D-pad right hands it to the next robot, D-pad left to
-                     the previous one; the others see a gamepad at rest. See RobotSelector.
+                     the previous one; the others see a gamepad at rest. The window's title says
+                     whether this mavgui has the gamepad. See RobotSelector.
   mavgui_launch.py --check                       print what mavgui would send from the gamepad
 
 mavgui reads the first joystick assuming the XInput axis order 0 LX, 1 LY, 2 RX, 3 RY,
@@ -150,7 +153,7 @@ def filter_events(events, selector, button_down, hat_motion):
     return kept
 
 
-def patch_pygame(selector=None):
+def patch_pygame(title=None, selector=None):
     import pygame
 
     original = pygame.joystick.Joystick
@@ -162,20 +165,24 @@ def patch_pygame(selector=None):
         return joy
 
     pygame.joystick.Joystick = joystick
-    if selector:
-        patch_selection(pygame, selector)
+    if selector or title:
+        patch_window(pygame, title, selector)
     return pygame
 
 
-def patch_selection(pygame, selector):
-    """mavgui's event loop also switches robots; the window title says whose mavgui this is and
-    whether it has the gamepad."""
-    original_get = pygame.event.get
+def patch_window(pygame, title, selector=None):
+    """The window's title says whose mavgui this is (title; "mavgui robot <i>" without one) and,
+    with a selector, whether it has the gamepad; mavgui's event loop then also switches robots."""
     original_caption = pygame.display.set_caption
+    if selector is None:   # mavgui's own title is replaced by ours; its events stay as they are
+        pygame.display.set_caption = lambda *args, **kwargs: original_caption(title)
+        return
+    title = title or f"mavgui robot {selector.robot}"
+    original_get = pygame.event.get
 
     def announce():
         has_it = selector.active()
-        original_caption(f"mavgui robot {selector.robot}" + (" [GAMEPAD]" if has_it else ""))
+        original_caption(title + (" [GAMEPAD]" if has_it else ""))
         print(f"mavgui_launch: the gamepad drives robot {selector.selected()}"
               + (" (this one)" if has_it else "; D-pad left / right switches"), flush=True)
 
@@ -315,13 +322,16 @@ def check(seconds=15.0):
 
 
 def parse_options(argv):
-    """Leading --record CSV and --select ROBOT ROBOTS FILE -> ({"record": ..., "select": ...}, the rest)."""
+    """Leading --record CSV, --title TITLE and --select ROBOT ROBOTS FILE ->
+    ({"record": ..., "title": ..., "select": ...}, the rest)."""
+    one_value = {"--record": "a CSV path", "--title": "a title"}   # option -> what it needs
     opts = {}
-    while argv[:1] in (["--record"], ["--select"]):
-        if argv[0] == "--record":
+    while argv and (argv[0] in one_value or argv[0] == "--select"):
+        option = argv[0]
+        if option in one_value:
             if len(argv) < 2:
-                raise ValueError("--record needs a CSV path")
-            opts["record"], argv = argv[1], argv[2:]
+                raise ValueError(f"{option} needs {one_value[option]}")
+            opts[option[2:]], argv = argv[1], argv[2:]
         else:
             if len(argv) < 4:
                 raise ValueError("--select needs ROBOT ROBOTS FILE")
@@ -349,7 +359,7 @@ def main(argv):
         robot, robots, path = opts["select"]
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         selector = RobotSelector(path, robot, robots)
-    patch_pygame(selector)
+    patch_pygame(opts.get("title"), selector)
     patch_pygame_gui()
     sys.argv = [mavgui] + argv[1:]
     sys.path.insert(0, os.path.dirname(mavgui))  # mavgui imports grpy and mavudptest from its folder

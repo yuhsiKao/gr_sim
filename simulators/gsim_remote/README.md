@@ -35,35 +35,88 @@ next run. Ctrl-C in either terminal, or closing the window, stops both.
 ## Run: Several Robots
 
 Each controller runs in its own container, next to one container for the physics
-([`docker/compose.multi.yaml`](../../docker/compose.multi.yaml)). On the host:
+([`docker/compose.multi.yaml`](../../docker/compose.multi.yaml)). The world and its robots are
+listed in a configuration file, [`config/multi_robots.yaml`](../../config/multi_robots.yaml). On
+the host:
 
 ```bash
-scripts/multi.sh up            # once: gr-physics, gr-robot-0, gr-robot-1
+scripts/multi.sh start         # everything, from this terminal
+scripts/multi.sh logs 1        # in another terminal: follow robot 1's controller
+scripts/multi.sh down          # when done: stops the containers
+```
+
+`start` makes the containers the file asks for: `gr-physics` and one `gr-robot-<i>` per robot,
+new ones for robots that were added and none for robots that are gone. It then runs the server in
+the terminal, with its window, and every robot's controller and mavgui in the background. Ctrl-C,
+or closing the window, stops all of it. `scripts/multi.sh start <file>` takes another file.
+
+```yaml
+world:
+  backend: gazebo            # mujoco | gazebo
+  headless: false            # true: no window
+robots:                      # robot i is entry i, from 0: gr-robot-<i>, DDS domain 124 + i
+  - spawn: [0.0, 0.0, 0.0]   # x [m], y [m], yaw [deg]
+    arm: true
+    mavgui: joystick         # false | joystick | keyboard
+  - spawn: [0.0, 1.5, 0.0]
+```
+
+| Key | Meaning |
+| --- | --- |
+| `world`: `backend`, `headless`, `rtf`, `scene`, `world` | The server's `gsim_backend`, `gsim_headless`, `gsim_rtf`, `gsim_scene`, `gsim_world` (Parameters below). |
+| `robots[i]`: `spawn` | Where the robot starts (`gsim_spawn`). Without it, robot `i` starts 1.5 m beside robot `i - 1`. |
+| `robots[i]`: `arm`, `control_rate`, `log` | That controller's `arm`, `gsim_control_rate`, `gsim_log`. |
+| `robots[i]`: `mavgui` | Opens the robot's mavgui, its window titled `mavgui robot <i>`. `joystick`: for the gamepad, and for the keyboard when no gamepad is connected. `keyboard`: for the keyboard also while a gamepad is connected. |
+| `args`, in `world` or in a robot | Any other parameter of that program, as `[key, value, ...]`. |
+
+A key the file does not know is an error, and so are more than 8 robots. Paths are relative to
+the repository.
+
+The controllers write to `run/logs/robot<i>.log`, the mavgui to `run/logs/mavgui<i>.log`; the
+first line of a log is the command that runs that program by hand. A controller that stops while
+the world runs is named in the terminal, with the end of its log. The world does not start
+before every robot has joined, so after such a message at the start, Ctrl-C and correct the file.
+`start` refuses to run while a simulation or a mavgui of an earlier run is left in the containers.
+
+### One Program per Terminal
+
+For a closer look at one program, each can have its own terminal:
+
+```bash
+scripts/multi.sh up            # the containers of the configuration file
 scripts/multi.sh server        # terminal 1: the world and its window, waits for 2 robots
                                #   (Gazebo: scripts/multi.sh server gsim_backend gazebo)
 scripts/multi.sh robot 0       # terminal 2
 scripts/multi.sh robot 1       # terminal 3; the simulation starts when all robots have joined
 scripts/multi.sh mavgui 0      # terminal 4: commands robot 0
 scripts/multi.sh mavgui 1      # terminal 5: commands robot 1
-scripts/multi.sh down          # when done
 ```
+
+Start the server first, then every robot. Here the parameters follow the command
+(`scripts/multi.sh robot 0 arm 1`), and `GSIM_ROBOTS=<n> scripts/multi.sh server` sets the number
+of robots the server waits for.
+
+### How the Robots Share the World
 
 - **Each robot is its own controller.** It has its own MBLink (reached from inside its container,
   which is what `multi.sh mavgui <i>` does) and its own DDS domain, 124 + index.
 - **The robots share the world.** They collide with each other, and the window, the real-time
   factor and pause (space bar) apply to all of them.
-- **Each robot is configured by its own controller.** `scripts/multi.sh robot 0 arm 1` gives robot
-  0 the arm while robot 1 has none; every robot has its own depth camera, on while its
-  `vision_mode` turns the cameras on.
-- **One gamepad drives one robot at a time.** Start every mavgui with `--joystick`
-  (`scripts/multi.sh mavgui 0 --joystick`, `... mavgui 1 --joystick`): the gamepad starts on robot
+- **Each robot is configured by its own controller.** `arm: true` in robot 0's entry gives robot 0
+  the arm while robot 1 has none; every robot has its own depth camera, on while its `vision_mode`
+  turns the cameras on.
+- **One gamepad drives one robot at a time.** Give every robot `mavgui: joystick` (by hand:
+  `scripts/multi.sh mavgui 0 --joystick`, `... mavgui 1 --joystick`): the gamepad starts on robot
   0; D-pad right hands it to the next robot, D-pad left to the previous one, among the robots of
-  the server that was started last (`GSIM_ROBOTS=1 scripts/multi.sh server`: nothing to switch).
-  The window title shows `[GAMEPAD]` on the robot that has it; the others stand still, and the
-  gamepad's buttons (soft e-stop, arm) only reach that robot.
-  Without `--joystick` a mavgui takes the keyboard while its window has the focus.
-- **Robot `i` starts 1.5 m beside robot `i - 1`.** `gsim_spawn "x y yaw_deg"` after
-  `multi.sh robot <i>` puts it elsewhere; robots must start at least 1 m apart.
+  the server that was started last (with one robot there is nothing to switch).
+  Every window's title names its robot, `mavgui robot 1`, and shows `[GAMEPAD]` on the one that
+  has the gamepad; the others stand still, and the gamepad's buttons (soft e-stop, arm) only reach
+  that robot.
+  With `mavgui: keyboard` (by hand: without `--joystick`) a mavgui takes the keyboard while its
+  window has the focus, and so do all of them while no gamepad is connected.
+- **Robot `i` starts 1.5 m beside robot `i - 1`.** `spawn` in its entry (by hand:
+  `gsim_spawn "x y yaw_deg"` after `multi.sh robot <i>`) puts it elsewhere; robots must start at
+  least 1 m apart.
 - **A controller that stops leaves its robot in the world.** The robot gets no torque any more and
   collapses where it is; the others carry on. The server stops when the last controller has left.
 

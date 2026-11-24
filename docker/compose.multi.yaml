@@ -2,8 +2,9 @@
 # (ghost_sim with gsim_backend remote, and that robot's mavgui). Every robot needs its own network
 # namespace because the SDK's MBLink port is fixed, and its own DDS domain because the SDK's topics
 # carry no robot name. Usage: docker/README.md and scripts/multi.sh.
+# This file is not started as it is: scripts/multi.sh starts run/compose.multi.yaml, which it
+# writes from this one (see gr-robot below), as the project gr-multi.
 # The image and the mounts are those of compose.yaml; per-machine settings: docker/.env.
-name: gr-multi
 
 x-gr: &gr
   image: gr-sim:dev
@@ -44,21 +45,12 @@ services:
     devices:
       - /dev/cpu_dma_latency
 
-  # A robot: its own network namespace (the default bridge network of this file), DDS domain
-  # 124 + index, and its own folder for the files the controller writes. Copy a block and raise
-  # the three numbers for one more robot.
-  gr-robot-0:
+  # A robot, the same for every one. scripts/multi.sh makes one gr-robot-<i> of it per robot of
+  # the configuration file (config/multi_robots.yaml): its own network namespace (the default
+  # bridge network of the project), and on top of what is here the container's name, DDS domain
+  # 124 + i (ROS_DOMAIN_ID) and its own folder for the files the controller writes (GSIM_RUN_DIR,
+  # run/robot<i>).
+  gr-robot:
     <<: *gr
-    container_name: gr-robot-0
     environment:
       <<: *env
-      ROS_DOMAIN_ID: "124"
-      GSIM_RUN_DIR: /root/gr_sim/run/robot0
-
-  gr-robot-1:
-    <<: *gr
-    container_name: gr-robot-1
-    environment:
-      <<: *env
-      ROS_DOMAIN_ID: "125"
-      GSIM_RUN_DIR: /root/gr_sim/run/robot1

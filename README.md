@@ -44,6 +44,7 @@ gr_sim/
 ├── ghost_sim/      # the executable: the SDK's bsp hooks + the simulator factory
 ├── gsim_server/    # the physics server for gsim_backend remote
 ├── scripts/        # run_sim.sh, run_server.sh, multi.sh, mavgui.sh, rviz.sh, m0_official_sim.sh, check_sdk_untouched.sh
+├── config/         # multi_robots.yaml: the robots of the several-robots setup
 ├── examples/       # scripts that command the robot over MBLink
 ├── ros2/           # ghost_interfaces: the controller's ROS 2 interface packages
 ├── third_party/    # GhostSDK_1.0.1: the Ghost SDK (submodule, read-only)
@@ -109,24 +110,17 @@ scripts/run_sim.sh gsim_backend remote gsim_server /tmp/gsim.sock
 From the project root, on the host, with the build made in `gr-sim`:
 
 ```bash
-scripts/multi.sh up            # once: the containers gr-physics, gr-robot-0, gr-robot-1
-scripts/multi.sh server        # terminal 1: the world and its window (MuJoCo), waits for 2 robots
-scripts/multi.sh robot 0       # terminal 2
-scripts/multi.sh robot 1       # terminal 3: the simulation starts when every robot has joined
-scripts/multi.sh mavgui 0      # terminal 4: commands robot 0
-scripts/multi.sh mavgui 1      # terminal 5: commands robot 1
-scripts/multi.sh down          # when done
-
-# Options
-#    scripts/multi.sh server gsim_backend gazebo     Gazebo instead of MuJoCo
-#    scripts/multi.sh server gsim_headless 1         no window
-#    scripts/multi.sh robot 0 arm 1                  robot 0 with the arm
-#    GSIM_ROBOTS=1 scripts/multi.sh server           one robot (more than two: one more
-#                                                    gr-robot-<i> block in docker/compose.multi.yaml)
+scripts/multi.sh start         # the containers, the world and its window, the robots and their mavgui
+scripts/multi.sh logs 0        # in another terminal: what robot 0's controller prints
+scripts/multi.sh down          # when done: stops the containers
 ```
 
-Ctrl-C in the server's terminal stops every robot. The full guide is
-[`simulators/gsim_remote/README.md`](simulators/gsim_remote/README.md).
+The world and its robots are those of [`config/multi_robots.yaml`](config/multi_robots.yaml): the
+simulator, and one entry per robot with where it starts, whether it has the arm and its mavgui.
+One more entry is one more robot: `start` makes its container. `scripts/multi.sh start <file>`
+takes another file. Ctrl-C in that terminal stops every robot and closes the mavgui windows. Each
+program can also run in a terminal of its own; that, the keys of the file and driving the robots
+with one gamepad are in [`simulators/gsim_remote/README.md`](simulators/gsim_remote/README.md).
 
 ### What Differs
 
@@ -136,11 +130,11 @@ Ctrl-C in the server's terminal stops every robot. The full guide is
 | Containers | `gr-sim` (`docker/compose.yaml`), on the host's network | `gr-physics` and one `gr-robot-<i>` per robot (`docker/compose.multi.yaml`), each with its own network |
 | Processes | one `ghost_sim`: the controller and the physics | one `gsim_server` (the world) and one `ghost_sim` per robot (its controller) |
 | Simulators | MuJoCo, Bullet, Gazebo | MuJoCo, Gazebo |
-| Parameters | all to `scripts/run_sim.sh` | the world's to `multi.sh server`, a robot's to `multi.sh robot <i>`; one given to the wrong side is an error |
+| Parameters | all to `scripts/run_sim.sh` | in `config/multi_robots.yaml`: the world's under `world`, a robot's in its entry under `robots` |
 | Window, real-time factor, pause | `ghost_sim`'s | the server's, for all robots at once |
-| mavgui | `scripts/mavgui.sh` | `scripts/multi.sh mavgui <i>`, one per robot |
+| mavgui | `scripts/mavgui.sh` | one window per robot, titled `mavgui robot <i>`, opened by `multi.sh start` for the robots with `mavgui` in the file |
 | ROS 2 topics | DDS domain `ROS_DOMAIN_ID`, 124 if unset | robot `i` is DDS domain 124 + `i`; the topic names are the same for every robot |
-| Stopping | Ctrl-C, or close the window | Ctrl-C in the server's terminal stops every robot; a robot stopped on its own stays in the world without torque |
+| Stopping | Ctrl-C, or close the window | Ctrl-C in `multi.sh start`'s terminal, or closing the window, stops every robot; a controller that stops on its own leaves its robot in the world without torque |
 
 With several robots, a ROS 2 tool picks its robot by the domain, for example
 `ROS_DOMAIN_ID=125 ros2 topic list` for robot 1. It sees that robot from any of these containers,

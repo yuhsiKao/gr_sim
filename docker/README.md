@@ -68,13 +68,18 @@ image and mounts, but one container per program instead of host networking.
 | Container | Runs | Network |
 | --- | --- | --- |
 | `gr-physics` | `gsim_server`: the world and its window | bridge |
-| `gr-robot-0`, `gr-robot-1` | one `ghost_sim` each, and that robot's mavgui | bridge, each its own namespace; DDS domain 124 + index |
+| `gr-robot-<i>`, one per robot | one `ghost_sim` each, and that robot's mavgui | bridge, each its own namespace; DDS domain 124 + index |
 
 Every controller binds the SDK's fixed MBLink port, so each needs a network namespace of its own;
 the socket to the physics is a file in the mounted repository folder (`gr_sim/run/gsim.sock`).
 `scripts/multi.sh` starts the containers and runs the programs in them; see
-[`simulators/gsim_remote/README.md`](../simulators/gsim_remote/README.md). For one more robot, copy
-a `gr-robot-<i>` block in the compose file and raise its three numbers.
+[`simulators/gsim_remote/README.md`](../simulators/gsim_remote/README.md).
+
+The compose file is not started as it is. It describes the physics container and one robot
+container, and `scripts/multi.sh` writes `run/compose.multi.yaml` from it: one `gr-robot-<i>` per
+robot of [`config/multi_robots.yaml`](../config/multi_robots.yaml), each with its name, its DDS
+domain and its folder `run/robot<i>` for the files the controller writes. One more robot is one
+more entry in that file; what all containers share (image, mounts, GPU) is changed here.
 
 `gr-physics` is also given the host's `/dev/cpu_dma_latency`: `gsim_server` holds it open to keep
 a Gazebo world with several robots at real time (the same README, Real Time).
