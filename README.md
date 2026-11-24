@@ -50,7 +50,8 @@ gr_sim/
 ├── third_party/    # GhostSDK_1.0.1: the Ghost SDK (submodule, read-only)
 ├── cmake/          # find modules: Ghost SDK, MuJoCo, simulate, Gazebo
 ├── docker/         # Dockerfile, compose.yaml (container gr-sim), compose.multi.yaml (several robots)
-└── install.md      # installation from scratch
+├── install.md      # installation from scratch
+└── LICENSE         # Apache License 2.0
 ```
 
 ## Getting Started
@@ -169,3 +170,15 @@ shell exports (in `.bashrc`, say) takes the place of the container's.
 Ubuntu 24.04 · GhostSDK 1.0.1 · MuJoCo 4.0.0 · Bullet (SDK) · Gazebo Harmonic (gz-sim 8, DART) ·
 ROS 2 Jazzy · C++17 · CMake ≥ 3.16 · Python 3.10 · Docker (NVIDIA GPU). Commands run inside the
 `gr-sim` container by default; see [`install.md`](install.md) for details.
+
+## License
+
+Copyright 2026 YuHsi Kao. Licensed under the [Apache License, Version 2.0](LICENSE).
+
+Two things in this project belong to others and are not covered by that license:
+
+- **GhostSDK 1.0.1** (`third_party/GhostSDK_1.0.1`) is Ghost Robotics' software. It is a submodule
+  in a private repository of its own; nothing of it is in this repository.
+- **`ros2/ghost_interfaces`** holds the interface packages of the robot's controller, by Ghost
+  Robotics (`ghost_manager_interfaces`, `robot_control_msgs`: Apache 2.0) and Draper
+  (`draper_msgs`: MIT). They keep the licenses named in their `package.xml`.
