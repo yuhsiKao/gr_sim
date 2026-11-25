@@ -50,11 +50,18 @@ settings:
 From the repository root:
 
 ```bash
-docker compose -f docker/compose.yaml build       # once; the image is about 7 GB
+docker compose -f docker/compose.yaml build       # once; the image, gr-sim:dev, is about 7 GB
 xhost +local:docker                               # once per login, for the windows
 docker compose -f docker/compose.yaml up -d
 docker exec -it gr-sim bash
 docker compose -f docker/compose.yaml down        # stop
+```
+
+Instead of building, the published image can be pulled and given the name the compose files use:
+
+```bash
+docker pull ghcr.io/yuhsikao/gr-sim:latest
+docker tag ghcr.io/yuhsikao/gr-sim:latest gr-sim:dev
 ```
 
 Rebuild the image only after changing `docker/Dockerfile` or `docker/requirements-mavgui.txt`, then

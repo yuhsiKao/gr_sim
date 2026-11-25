@@ -89,13 +89,23 @@ Your workspace should now look like:
 To use another copy of the SDK, copy `docker/.env.example` to `docker/.env` and set
 `CONTROLS_INSTALL_DIR` to its `GhostSDK_bullet_linux` directory.
 
-## 4. Build and Start the Docker Environment
+## 4. Get the Image and Start the Docker Environment
 
-Build the development image (once; it downloads several GB):
+Get the development image, `gr-sim:dev` (once; about 7 GB). Either pull the published one:
+
+```bash
+docker pull ghcr.io/yuhsikao/gr-sim:latest
+docker tag ghcr.io/yuhsikao/gr-sim:latest gr-sim:dev
+```
+
+or build it from `docker/Dockerfile`:
 
 ```bash
 docker compose -f docker/compose.yaml build
 ```
+
+The published image is that build; it holds the tools only, neither this repository nor the SDK.
+Build it yourself after changing `docker/Dockerfile` or `docker/requirements-mavgui.txt`.
 
 Allow Docker containers to use the host X11 display (once per login):
 

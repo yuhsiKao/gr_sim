@@ -3,6 +3,11 @@
 name: gr-sim
 services:
   gr-sim:
+    # The image is gr-sim:dev, from either of:
+    #   docker compose -f docker/compose.yaml build         built here from docker/Dockerfile
+    #   docker pull ghcr.io/yuhsikao/gr-sim:latest          the published one, then
+    #   docker tag ghcr.io/yuhsikao/gr-sim:latest gr-sim:dev
+    # `up` uses the gr-sim:dev that exists and builds it only when there is none.
     build:
       context: .
     image: gr-sim:dev
